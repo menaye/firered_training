@@ -5,6 +5,7 @@
 #include "item.h"
 #include "sound.h"
 #include "pokemon.h"
+#include "trainer_instruction_sets.h"
 #include "load_save.h"
 #include "safari_zone.h"
 #include "quest_log.h"
@@ -905,6 +906,8 @@ void StartTrainerBattle(void)
 
 static void CB2_EndTrainerBattle(void)
 {
+    RestoreTrainerDrillParty();
+
     if (sTrainerBattleMode == TRAINER_BATTLE_EARLY_RIVAL)
     {
         if (IsPlayerDefeated(gBattleOutcome) == TRUE)

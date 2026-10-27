@@ -15,6 +15,24 @@ PalletTown_Text_RaisingMonsToo::
     .string "When they get strong, they can\n"
     .string "protect me.$"
 
+PalletTown_Text_ShayIntro::
+    .string "Normal moves can't hit GENGAR.\n"
+    .string "Switch to a POKéMON with a super-\p"
+    .string "effective move and hit within\n"
+    .string "three turns!$"
+
+PalletTown_Text_ShayDefeat::
+    .string "You read the matchup perfectly!\n"
+    .string "That's a smart battle drill!$"
+
+PalletTown_Text_ShayAfter::
+    .string "Switching can turn a bad matchup\n"
+    .string "around. Keep watching for type\n"
+    .string "advantages!$"
+
+PalletTown_Text_ShayDrillUnavailable::
+    .string "Let's practice another time!$"
+
 PalletTown_Text_CanStoreItemsAndMonsInPC::
     .string "Technology is incredible!\p"
     .string "You can now store and recall items\n"
@@ -64,4 +82,3 @@ PalletTown_Text_OakYouEnjoyingTraveling::
     .string "exotic locales.\p"
     .string "Good for you, good for you.\n"
     .string "Hohoho.$"
-

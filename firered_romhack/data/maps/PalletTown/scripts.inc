@@ -166,6 +166,17 @@ PalletTown_Movement_PlayerWalkToLabFromHouse::
 	walk_right
 	step_end
 
+PalletTown_EventScript_Shay::
+	specialvar VAR_RESULT, BeginTrainerDrill
+	goto_if_eq VAR_RESULT, FALSE, PalletTown_EventScript_ShayDrillUnavailable
+	trainerbattle_single TRAINER_PALLET_TOWN_Shay, PalletTown_Text_ShayIntro, PalletTown_Text_ShayDefeat
+	msgbox PalletTown_Text_ShayAfter, MSGBOX_AUTOCLOSE
+	end
+
+PalletTown_EventScript_ShayDrillUnavailable::
+	msgbox PalletTown_Text_ShayDrillUnavailable, MSGBOX_NPC
+	end
+
 PalletTown_EventScript_OakTriggerLeft::
 	lockall
 	setvar VAR_TEMP_1, 0
