@@ -11,6 +11,7 @@
 #include "constants/items.h"
 #include "constants/moves.h"
 #include "constants/pokemon.h"
+#include "constants/trainers.h"
 
 static bool8 HasSuperEffectiveMoveAgainstOpponents(bool8 noRng);
 static bool8 FindMonWithFlagsAndSuperEffective(u8 flags, u8 moduloPercent);
@@ -19,10 +20,12 @@ static bool8 ShouldSwitchForBadMatchup(void);
 static bool8 ShouldSwitchToAvoidSlowerKO(void);
 static bool8 HasUsefulStatusOrSetupMove(void);
 static void LoadSwitchCandidate(struct BattlePokemon *mon, u8 partyId);
+static void LoadRevealedPlayerReserve(struct BattlePokemon *mon, u8 partyId);
 static void LoadKnownPlayerPokemon(struct BattlePokemon *mon, u8 battlerId);
 static void RememberPlayerBattleKnowledge(u8 battlerId);
 static u32 GetKnownPlayerThreat(u8 battlerId, struct BattlePokemon *defender);
 static u32 GetKnownPlayerPriorityThreat(u8 battlerId, struct BattlePokemon *defender, s8 *priority);
+static u32 GetKnownPlayerThreatForReserve(u8 partyId, struct BattlePokemon *attacker, u8 defenderId);
 static bool8 ShouldUseItem(void);
 
 struct SwitchSpeedRange
@@ -938,6 +941,7 @@ static void RememberPlayerBattleKnowledge(u8 battlerId)
         return;
 
     knowledge = &gBattleResources->battleHistory->playerParty[partyId];
+    knowledge->revealed = TRUE;
     if (lastMove != MOVE_NONE && lastMove != MOVE_UNAVAILABLE && lastMove < MOVES_COUNT)
     {
         for (i = 0; i < MAX_MON_MOVES; i++)
@@ -1288,6 +1292,341 @@ static u32 GetKnownPlayerPriorityThreat(u8 battlerId, struct BattlePokemon *defe
     if (priority != NULL)
         *priority = highestPriority;
     return bestDamage;
+}
+
+static u32 GetKnownPlayerThreatForReserve(u8 partyId, struct BattlePokemon *attacker, u8 defenderId)
+{
+    struct PlayerPartyKnowledge *knowledge = &gBattleResources->battleHistory->playerParty[partyId];
+    u32 bestDamage = 0;
+    u8 i;
+
+    for (i = 0; i < MAX_MON_MOVES; ++i)
+    {
+        u16 move = knowledge->moves[i];
+        u32 damage;
+
+        if (move == MOVE_NONE || move >= MOVES_COUNT)
+            continue;
+        damage = GetSwitchMoveDamage(attacker, &gBattleMons[defenderId], move, 0,
+                                     gBattlerTarget, defenderId);
+        if (damage > bestDamage)
+            bestDamage = damage;
+    }
+
+    {
+        u32 inferredDamage = GetInferredStabDamage(attacker, &gBattleMons[defenderId],
+                                                   gBattlerTarget, defenderId);
+        if (inferredDamage > bestDamage)
+            bestDamage = inferredDamage;
+    }
+
+    return bestDamage;
+}
+
+static bool8 IsUsableSwitchAwareMove(u8 moveSlot)
+{
+    u16 move = gBattleMons[gActiveBattler].moves[moveSlot];
+
+    return move != MOVE_NONE
+        && move < MOVES_COUNT
+        && gBattleMons[gActiveBattler].pp[moveSlot] != 0
+        && gBattleResources->ai->score[moveSlot] != 0
+        && gDisableStructs[gActiveBattler].disabledMove != move
+        && (gDisableStructs[gActiveBattler].encoredMove == MOVE_NONE
+         || gDisableStructs[gActiveBattler].encoredMove == move);
+}
+
+static u8 GetGuaranteedKOMove(struct BattlePokemon *target)
+{
+    u8 bestMove = MAX_MON_MOVES;
+    u32 bestDamage = 0;
+    u8 i;
+
+    for (i = 0; i < MAX_MON_MOVES; ++i)
+    {
+        u16 move;
+        u32 damage;
+
+        if (!IsUsableSwitchAwareMove(i))
+            continue;
+        move = gBattleMons[gActiveBattler].moves[i];
+        if (gBattleMoves[move].power == 0
+         || (gBattleMoves[move].accuracy != 0 && gBattleMoves[move].accuracy != 100)
+         || gBattleMons[gActiveBattler].statStages[STAT_ACC] < target->statStages[STAT_EVASION])
+            continue;
+
+        damage = GetSwitchMoveDamage(&gBattleMons[gActiveBattler], target, move, 0, gActiveBattler, gBattlerTarget);
+        damage = damage * 85 / 100;
+        if (damage >= target->hp && damage > bestDamage)
+        {
+            bestDamage = damage;
+            bestMove = i;
+        }
+    }
+
+    return bestMove;
+}
+
+static bool8 IsUsefulStatusMove(u16 move, struct BattlePokemon *target)
+{
+    u16 effect = gBattleMoves[move].effect;
+    u8 typeFlags = AI_TypeCalc(move, target->species, target->ability);
+
+    if ((typeFlags & MOVE_RESULT_DOESNT_AFFECT_FOE)
+     || (target->status2 & STATUS2_SUBSTITUTE))
+        return FALSE;
+
+    switch (effect)
+    {
+    case EFFECT_SLEEP:
+    case EFFECT_YAWN:
+        return target->status1 == 0
+            && target->ability != ABILITY_INSOMNIA
+            && target->ability != ABILITY_VITAL_SPIRIT;
+    case EFFECT_POISON:
+    case EFFECT_TOXIC:
+        return target->status1 == 0
+            && target->type1 != TYPE_POISON && target->type1 != TYPE_STEEL
+            && target->type2 != TYPE_POISON && target->type2 != TYPE_STEEL
+            && target->ability != ABILITY_IMMUNITY;
+    case EFFECT_PARALYZE:
+        return target->status1 == 0 && target->ability != ABILITY_LIMBER;
+    case EFFECT_WILL_O_WISP:
+        return target->status1 == 0
+            && target->type1 != TYPE_FIRE && target->type2 != TYPE_FIRE
+            && target->ability != ABILITY_WATER_VEIL;
+    case EFFECT_CONFUSE:
+        return !(target->status2 & STATUS2_CONFUSION)
+            && target->ability != ABILITY_OWN_TEMPO;
+    case EFFECT_LEECH_SEED:
+        return target->type1 != TYPE_GRASS && target->type2 != TYPE_GRASS;
+    case EFFECT_ATTACK_DOWN:
+    case EFFECT_ATTACK_DOWN_2:
+        return target->statStages[STAT_ATK] > MIN_STAT_STAGE;
+    case EFFECT_DEFENSE_DOWN:
+    case EFFECT_DEFENSE_DOWN_2:
+        return target->statStages[STAT_DEF] > MIN_STAT_STAGE;
+    case EFFECT_SPEED_DOWN:
+    case EFFECT_SPEED_DOWN_2:
+        return target->statStages[STAT_SPEED] > MIN_STAT_STAGE;
+    case EFFECT_SPECIAL_ATTACK_DOWN:
+    case EFFECT_SPECIAL_ATTACK_DOWN_2:
+        return target->statStages[STAT_SPATK] > MIN_STAT_STAGE;
+    case EFFECT_SPECIAL_DEFENSE_DOWN:
+    case EFFECT_SPECIAL_DEFENSE_DOWN_2:
+        return target->statStages[STAT_SPDEF] > MIN_STAT_STAGE;
+    default:
+        return FALSE;
+    }
+}
+
+static bool8 IsUsefulRecoveryMove(u16 move)
+{
+    if (gBattleMons[gActiveBattler].hp >= gBattleMons[gActiveBattler].maxHP / 2)
+        return FALSE;
+
+    switch (gBattleMoves[move].effect)
+    {
+    case EFFECT_RESTORE_HP:
+    case EFFECT_MORNING_SUN:
+    case EFFECT_SYNTHESIS:
+    case EFFECT_MOONLIGHT:
+    case EFFECT_SOFTBOILED:
+        return TRUE;
+    case EFFECT_REST:
+        return gBattleMons[gActiveBattler].hp < gBattleMons[gActiveBattler].maxHP / 4
+            || gBattleMons[gActiveBattler].status1 != 0;
+    default:
+        return FALSE;
+    }
+}
+
+static void LoadRevealedPlayerReserve(struct BattlePokemon *mon, u8 partyId)
+{
+    struct PlayerPartyKnowledge *knowledge = &gBattleResources->battleHistory->playerParty[partyId];
+    u16 species = GetMonData(&gPlayerParty[partyId], MON_DATA_SPECIES);
+    u8 level = GetMonData(&gPlayerParty[partyId], MON_DATA_LEVEL);
+    u16 actualMaxHP = GetMonData(&gPlayerParty[partyId], MON_DATA_MAX_HP);
+    u16 actualHP = GetMonData(&gPlayerParty[partyId], MON_DATA_HP);
+    const struct SpeciesInfo *speciesInfo = &gSpeciesInfo[species];
+    u8 i;
+
+    *mon = gBattleMons[gActiveBattler];
+    mon->species = species;
+    mon->attack = ((2 * speciesInfo->baseAttack + 31 + 32 / 4) * level) / 100 + 5;
+    mon->defense = ((2 * speciesInfo->baseDefense + 31 + 32 / 4) * level) / 100 + 5;
+    mon->speed = ((2 * speciesInfo->baseSpeed + 31 + 32 / 4) * level) / 100 + 5;
+    mon->spAttack = ((2 * speciesInfo->baseSpAttack + 31 + 32 / 4) * level) / 100 + 5;
+    mon->spDefense = ((2 * speciesInfo->baseSpDefense + 31 + 32 / 4) * level) / 100 + 5;
+    mon->level = level;
+    mon->maxHP = ((2 * speciesInfo->baseHP + 31 + 32 / 4) * level) / 100 + level + 10;
+    mon->hp = actualMaxHP != 0 ? (mon->maxHP * actualHP) / actualMaxHP : mon->maxHP;
+    mon->status1 = GetMonData(&gPlayerParty[partyId], MON_DATA_STATUS);
+    mon->item = knowledge->itemKnown ? knowledge->item : ITEM_NONE;
+    mon->ability = knowledge->abilityKnown ? knowledge->ability : ABILITY_NONE;
+    mon->type1 = gSpeciesInfo[species].types[0];
+    mon->type2 = gSpeciesInfo[species].types[1];
+    mon->status2 = 0;
+    for (i = 0; i < NUM_BATTLE_STATS; ++i)
+        mon->statStages[i] = DEFAULT_STAT_STAGE;
+}
+
+u8 AI_GetSwitchAwareMoveChoice(void)
+{
+    struct BattlePokemon *activeOpponent;
+    struct BattlePokemon predictedSwitch;
+    u8 targetBattler = gBattlerTarget;
+    u8 currentKOMove;
+    u8 predictedSwitchPartyId = PARTY_SIZE;
+    u8 healthyReserves = 0;
+    u8 i, j;
+    u8 switchLikelihood;
+    u8 bestCoverageMove = MAX_MON_MOVES;
+    u8 bestStatusMove = MAX_MON_MOVES;
+    u8 bestRecoveryMove = MAX_MON_MOVES;
+    u32 bestCoverageDamage = 0;
+    s32 bestSwitchScore = -0x7FFFFFFF;
+    u32 activeThreat;
+    bool8 mayPredictSwitch;
+    bool8 hasPredictedSwitchTarget;
+
+    if (!(gBattleTypeFlags & BATTLE_TYPE_TRAINER)
+     || GetBattlerSide(targetBattler) != B_SIDE_PLAYER)
+        return MAX_MON_MOVES;
+
+    activeOpponent = &gBattleMons[targetBattler];
+    currentKOMove = GetGuaranteedKOMove(activeOpponent);
+    if (currentKOMove == MAX_MON_MOVES)
+        return MAX_MON_MOVES;
+
+    mayPredictSwitch = gBattleResources->battleHistory->playerSwitchedOut
+                    || gTrainers[gTrainerBattleOpponent_A].trainerClass == TRAINER_CLASS_LEADER
+                    || gTrainers[gTrainerBattleOpponent_A].trainerClass == TRAINER_CLASS_ELITE_FOUR
+                    || gTrainers[gTrainerBattleOpponent_A].trainerClass == TRAINER_CLASS_CHAMPION
+                    || gTrainers[gTrainerBattleOpponent_A].trainerClass == TRAINER_CLASS_RIVAL_EARLY
+                    || gTrainers[gTrainerBattleOpponent_A].trainerClass == TRAINER_CLASS_RIVAL_LATE
+                    || gTrainers[gTrainerBattleOpponent_A].trainerClass == TRAINER_CLASS_BOSS
+                    || gTrainers[gTrainerBattleOpponent_A].trainerClass == TRAINER_CLASS_PKMN_PROF;
+
+    if (!mayPredictSwitch)
+        return currentKOMove;
+
+    for (i = 0; i < PARTY_SIZE; ++i)
+    {
+        u16 species = GetMonData(&gPlayerParty[i], MON_DATA_SPECIES_OR_EGG);
+
+        if (species == SPECIES_NONE || species == SPECIES_EGG
+         || GetMonData(&gPlayerParty[i], MON_DATA_HP) == 0
+         || i == gBattleStruct->battlerPartyIndexes[targetBattler])
+            continue;
+        if (gBattleTypeFlags & BATTLE_TYPE_DOUBLE)
+        {
+            u8 partner = GetBattlerAtPosition(GetBattlerPosition(targetBattler) ^ BIT_FLANK);
+            if (!(gAbsentBattlerFlags & gBitTable[partner])
+             && i == gBattleStruct->battlerPartyIndexes[partner])
+                continue;
+        }
+        ++healthyReserves;
+
+        if (!gBattleResources->battleHistory->playerParty[i].revealed)
+            continue;
+
+        LoadRevealedPlayerReserve(&predictedSwitch, i);
+        {
+            u32 playerThreat = GetKnownPlayerThreatForReserve(i, &predictedSwitch, gActiveBattler);
+            u32 incomingDamage = 0;
+            s32 score;
+
+            for (j = 0; j < MAX_MON_MOVES; ++j)
+            {
+                u16 move = gBattleMons[gActiveBattler].moves[j];
+                u32 damage;
+
+                if (!IsUsableSwitchAwareMove(j) || gBattleMoves[move].power == 0)
+                    continue;
+                damage = GetSwitchMoveDamage(&gBattleMons[gActiveBattler], &predictedSwitch, move, 0,
+                                             gActiveBattler, targetBattler);
+                if (damage > incomingDamage)
+                    incomingDamage = damage;
+            }
+
+            score = (s32)(playerThreat * 100 / gBattleMons[gActiveBattler].maxHP)
+                  - (s32)(incomingDamage * 100 / predictedSwitch.maxHP);
+            if (predictedSwitchPartyId == PARTY_SIZE || score > bestSwitchScore)
+            {
+                predictedSwitchPartyId = i;
+                bestSwitchScore = score;
+            }
+        }
+    }
+
+    if (healthyReserves == 0)
+        return currentKOMove;
+
+    switchLikelihood = healthyReserves * 20;
+    if (switchLikelihood > 90)
+        switchLikelihood = 90;
+
+    activeThreat = GetKnownPlayerThreat(targetBattler, &gBattleMons[gActiveBattler]);
+    // Healthy reserves make a switch more plausible; a dangerous active opponent raises the cost of switching.
+    if (activeThreat >= gBattleMons[gActiveBattler].hp / 2)
+    {
+        if (switchLikelihood > 20)
+            switchLikelihood -= 20;
+    }
+    else if (switchLikelihood < 90)
+    {
+        switchLikelihood += 10;
+    }
+
+    if (switchLikelihood < 50)
+        return currentKOMove;
+
+    hasPredictedSwitchTarget = predictedSwitchPartyId != PARTY_SIZE;
+    if (hasPredictedSwitchTarget)
+        LoadRevealedPlayerReserve(&predictedSwitch, predictedSwitchPartyId);
+    else
+        predictedSwitch = *activeOpponent;
+
+    for (i = 0; i < MAX_MON_MOVES; ++i)
+    {
+        u16 move;
+        u32 damage;
+
+        if (!IsUsableSwitchAwareMove(i))
+            continue;
+        move = gBattleMons[gActiveBattler].moves[i];
+        if (hasPredictedSwitchTarget && gBattleMoves[move].power != 0)
+        {
+            damage = GetSwitchMoveDamage(&gBattleMons[gActiveBattler], &predictedSwitch, move, 0,
+                                         gActiveBattler, targetBattler);
+            if (damage >= predictedSwitch.maxHP / 8 && damage > bestCoverageDamage)
+            {
+                bestCoverageDamage = damage;
+                bestCoverageMove = i;
+            }
+        }
+        else if (IsUsefulRecoveryMove(move))
+        {
+            if (bestRecoveryMove == MAX_MON_MOVES
+             || gBattleResources->ai->score[i] > gBattleResources->ai->score[bestRecoveryMove])
+                bestRecoveryMove = i;
+        }
+        else if (IsUsefulStatusMove(move, &predictedSwitch))
+        {
+            if (bestStatusMove == MAX_MON_MOVES
+             || gBattleResources->ai->score[i] > gBattleResources->ai->score[bestStatusMove])
+                bestStatusMove = i;
+        }
+    }
+
+    if (bestCoverageMove != MAX_MON_MOVES)
+        return bestCoverageMove;
+    if (bestRecoveryMove != MAX_MON_MOVES)
+        return bestRecoveryMove;
+    if (bestStatusMove != MAX_MON_MOVES)
+        return bestStatusMove;
+    return currentKOMove;
 }
 
 static bool8 ShouldSwitchForBadMatchup(void)

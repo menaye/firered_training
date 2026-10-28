@@ -4475,6 +4475,10 @@ static void Cmd_switchindataupdate(void)
 
     gActiveBattler = GetBattlerForBattleScript(gBattlescriptCurrInstr[1]);
     oldData = gBattleMons[gActiveBattler];
+    if (GetBattlerSide(gActiveBattler) == B_SIDE_PLAYER
+     && oldData.species != SPECIES_NONE
+     && oldData.hp != 0)
+        gBattleResources->battleHistory->playerSwitchedOut = TRUE;
     monData = (u8 *)(&gBattleMons[gActiveBattler]);
 
     for (i = 0; i < sizeof(struct BattlePokemon); i++)

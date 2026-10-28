@@ -299,6 +299,7 @@ struct PlayerPartyKnowledge
     u8 ability;
     bool8 itemKnown;
     bool8 abilityKnown;
+    bool8 revealed;
 };
 
 #ifndef BUGFIX
@@ -310,6 +311,7 @@ struct BattleHistory
     /*0x24*/ u16 trainerItems[MAX_BATTLERS_COUNT];
     /*0x2C*/ u8 itemsNo;
     struct PlayerPartyKnowledge playerParty[PARTY_SIZE];
+    bool8 playerSwitchedOut;
 };
 #else
 struct BattleHistory
@@ -320,6 +322,7 @@ struct BattleHistory
     u16 trainerItems[MAX_BATTLERS_COUNT];
     u8 itemsNo;
     struct PlayerPartyKnowledge playerParty[PARTY_SIZE];
+    bool8 playerSwitchedOut;
 };
 #endif
 

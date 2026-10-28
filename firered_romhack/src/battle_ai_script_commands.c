@@ -5,6 +5,7 @@
 #include "item.h"
 #include "random.h"
 #include "battle_ai_script_commands.h"
+#include "battle_ai_switch_items.h"
 #include "constants/abilities.h"
 #include "constants/battle_ai.h"
 #include "constants/battle_move_effects.h"
@@ -382,6 +383,7 @@ u8 BattleAI_ChooseMoveOrAction(void)
     u8 currentMoveArray[MAX_MON_MOVES];
     u8 consideredMoveArray[MAX_MON_MOVES];
     u8 numOfBestMoves;
+    u8 strategicMove;
     s32 i;
 
     RecordLastUsedMoveByTarget();
@@ -402,6 +404,10 @@ u8 BattleAI_ChooseMoveOrAction(void)
         return AI_CHOICE_FLEE;
     if (AI_THINKING_STRUCT->aiAction & AI_ACTION_WATCH)
         return AI_CHOICE_WATCH;
+
+    strategicMove = AI_GetSwitchAwareMoveChoice();
+    if (strategicMove < MAX_MON_MOVES)
+        return strategicMove;
 
     numOfBestMoves = 1;
     currentMoveArray[0] = AI_THINKING_STRUCT->score[0];
@@ -476,24 +482,27 @@ static void RecordLastUsedMoveByTarget(void)
 {
     s32 i;
 
-    if (GetBattlerSide(gBattlerTarget) == B_SIDE_PLAYER
-     && gLastMoves[gBattlerTarget] != MOVE_NONE
-     && gLastMoves[gBattlerTarget] != MOVE_UNAVAILABLE)
+    if (GetBattlerSide(gBattlerTarget) == B_SIDE_PLAYER)
     {
         u8 partyId = gBattleStruct->battlerPartyIndexes[gBattlerTarget];
 
         if (partyId < PARTY_SIZE)
         {
             struct PlayerPartyKnowledge *knowledge = &BATTLE_HISTORY->playerParty[partyId];
+            knowledge->revealed = TRUE;
 
-            for (i = 0; i < MAX_MON_MOVES; i++)
+            if (gLastMoves[gBattlerTarget] != MOVE_NONE
+             && gLastMoves[gBattlerTarget] != MOVE_UNAVAILABLE)
             {
-                if (knowledge->moves[i] == gLastMoves[gBattlerTarget])
-                    break;
-                if (knowledge->moves[i] == MOVE_NONE)
+                for (i = 0; i < MAX_MON_MOVES; i++)
                 {
-                    knowledge->moves[i] = gLastMoves[gBattlerTarget];
-                    break;
+                    if (knowledge->moves[i] == gLastMoves[gBattlerTarget])
+                        break;
+                    if (knowledge->moves[i] == MOVE_NONE)
+                    {
+                        knowledge->moves[i] = gLastMoves[gBattlerTarget];
+                        break;
+                    }
                 }
             }
         }
