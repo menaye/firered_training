@@ -2,6 +2,7 @@
 #include "battle.h"
 #include "battle_anim.h"
 #include "battle_controllers.h"
+#include "event_data.h"
 #include "random.h"
 #include "util.h"
 #include "constants/abilities.h"
@@ -13,7 +14,22 @@
 
 static bool8 HasSuperEffectiveMoveAgainstOpponents(bool8 noRng);
 static bool8 FindMonWithFlagsAndSuperEffective(u8 flags, u8 moduloPercent);
+static bool8 HasEffectiveDamagingMove(struct BattlePokemon *attacker, u8 attackerId, struct BattlePokemon *defender, u8 defenderId);
+static bool8 ShouldSwitchForBadMatchup(void);
+static bool8 ShouldSwitchToAvoidSlowerKO(void);
+static bool8 HasUsefulStatusOrSetupMove(void);
+static void LoadSwitchCandidate(struct BattlePokemon *mon, u8 partyId);
+static void LoadKnownPlayerPokemon(struct BattlePokemon *mon, u8 battlerId);
+static void RememberPlayerBattleKnowledge(u8 battlerId);
+static u32 GetKnownPlayerThreat(u8 battlerId, struct BattlePokemon *defender);
+static u32 GetKnownPlayerPriorityThreat(u8 battlerId, struct BattlePokemon *defender, s8 *priority);
 static bool8 ShouldUseItem(void);
+
+struct SwitchSpeedRange
+{
+    u32 min;
+    u32 max;
+};
 
 static bool8 ShouldSwitchIfPerishSong(void)
 {
@@ -176,6 +192,7 @@ static bool8 ShouldSwitchIfNaturalCure(void)
 
 static bool8 HasSuperEffectiveMoveAgainstOpponents(bool8 noRng)
 {
+    struct BattlePokemon opponentMon;
     u8 opposingBattler;
     s32 i;
     u8 moveFlags;
@@ -184,13 +201,18 @@ static bool8 HasSuperEffectiveMoveAgainstOpponents(bool8 noRng)
     opposingBattler = GetBattlerAtPosition(B_POSITION_PLAYER_LEFT);
     if (!(gAbsentBattlerFlags & gBitTable[opposingBattler]))
     {
+        LoadKnownPlayerPokemon(&opponentMon, opposingBattler);
         for (i = 0; i < MAX_MON_MOVES; ++i)
         {
             move = gBattleMons[gActiveBattler].moves[i];
-            if (move == MOVE_NONE)
+            if (move == MOVE_NONE || gBattleMons[gActiveBattler].pp[i] == 0
+             || gBattleMoves[move].power == 0
+             || gDisableStructs[gActiveBattler].disabledMove == move
+             || (gDisableStructs[gActiveBattler].encoredMove != MOVE_NONE
+              && gDisableStructs[gActiveBattler].encoredMove != move))
                 continue;
 
-            moveFlags = AI_TypeCalc(move, gBattleMons[opposingBattler].species, gBattleMons[opposingBattler].ability);
+            moveFlags = AI_TypeCalc(move, opponentMon.species, opponentMon.ability);
             if (moveFlags & MOVE_RESULT_SUPER_EFFECTIVE)
             {
                 if (noRng || (Random() % 10))
@@ -203,12 +225,17 @@ static bool8 HasSuperEffectiveMoveAgainstOpponents(bool8 noRng)
     opposingBattler = GetBattlerAtPosition(BATTLE_PARTNER(B_POSITION_PLAYER_LEFT));
     if (!(gAbsentBattlerFlags & gBitTable[opposingBattler]))
     {
+        LoadKnownPlayerPokemon(&opponentMon, opposingBattler);
         for (i = 0; i < MAX_MON_MOVES; ++i)
         {
             move = gBattleMons[gActiveBattler].moves[i];
-            if (move == MOVE_NONE)
+            if (move == MOVE_NONE || gBattleMons[gActiveBattler].pp[i] == 0
+             || gBattleMoves[move].power == 0
+             || gDisableStructs[gActiveBattler].disabledMove == move
+             || (gDisableStructs[gActiveBattler].encoredMove != MOVE_NONE
+              && gDisableStructs[gActiveBattler].encoredMove != move))
                 continue;
-            moveFlags = AI_TypeCalc(move, gBattleMons[opposingBattler].species, gBattleMons[opposingBattler].ability);
+            moveFlags = AI_TypeCalc(move, opponentMon.species, opponentMon.ability);
             if (moveFlags & MOVE_RESULT_SUPER_EFFECTIVE)
             {
                 if (noRng)
@@ -347,9 +374,12 @@ static bool8 ShouldSwitch(void)
      || FindMonThatAbsorbsOpponentsMove()
      || ShouldSwitchIfNaturalCure())
         return TRUE;
-    if (HasSuperEffectiveMoveAgainstOpponents(FALSE)
-     || AreStatsRaised())
+    if (ShouldSwitchToAvoidSlowerKO())
+        return TRUE;
+    if (AreStatsRaised())
         return FALSE;
+    if (ShouldSwitchForBadMatchup())
+        return TRUE;
     if (FindMonWithFlagsAndSuperEffective(MOVE_RESULT_DOESNT_AFFECT_FOE, 2)
      || FindMonWithFlagsAndSuperEffective(MOVE_RESULT_NOT_VERY_EFFECTIVE, 3))
         return TRUE;
@@ -484,24 +514,359 @@ static u32 GetSwitchMoveDamage(struct BattlePokemon *attacker, struct BattlePoke
 static u32 GetInferredStabDamage(struct BattlePokemon *attacker, struct BattlePokemon *defender, u8 attackerId, u8 defenderId)
 {
     u32 bestDamage = 0;
-    u16 move;
+    u8 typeIndex;
 
-    for (move = 1; move < MOVES_COUNT; move++)
+    for (typeIndex = 0; typeIndex < 2; typeIndex++)
     {
-        u8 type = gBattleMoves[move].type;
-        u32 damage;
+        u8 type = typeIndex == 0 ? attacker->type1 : attacker->type2;
+        u16 move;
 
-        if (gBattleMoves[move].effect != EFFECT_HIT
-         || gBattleMoves[move].power == 0
-         || (type != attacker->type1 && type != attacker->type2))
+        if (typeIndex == 1 && type == attacker->type1)
             continue;
 
-        damage = GetSwitchMoveDamage(attacker, defender, move, 60, attackerId, defenderId);
-        if (damage > bestDamage)
-            bestDamage = damage;
+        for (move = 1; move < MOVES_COUNT; move++)
+        {
+            u32 damage;
+
+            if (gBattleMoves[move].effect != EFFECT_HIT
+             || gBattleMoves[move].power == 0
+             || gBattleMoves[move].type != type)
+                continue;
+
+            damage = GetSwitchMoveDamage(attacker, defender, move, 60, attackerId, defenderId);
+            if (damage > bestDamage)
+                bestDamage = damage;
+            break;
+        }
     }
 
     return bestDamage;
+}
+
+static bool8 HasEffectiveDamagingMove(struct BattlePokemon *attacker, u8 attackerId, struct BattlePokemon *defender, u8 defenderId)
+{
+    u8 i;
+    u32 damageThreshold = defender->maxHP / 8;
+
+    if (damageThreshold == 0)
+        damageThreshold = 1;
+
+    for (i = 0; i < MAX_MON_MOVES; ++i)
+    {
+        u16 move = attacker->moves[i];
+        u32 damage;
+
+        if (move == MOVE_NONE || attacker->pp[i] == 0 || move >= MOVES_COUNT
+         || gBattleMoves[move].power == 0
+         || gDisableStructs[attackerId].disabledMove == move
+         || (gDisableStructs[attackerId].encoredMove != MOVE_NONE
+          && gDisableStructs[attackerId].encoredMove != move))
+            continue;
+
+        damage = GetSwitchMoveDamage(attacker, defender, move, 0, attackerId, defenderId);
+        if (damage >= damageThreshold)
+            return TRUE;
+    }
+
+    return FALSE;
+}
+
+static struct SwitchSpeedRange GetSwitchSpeedRange(struct BattlePokemon *mon, u8 battlerId, bool8 estimatePlayerSpread)
+{
+    struct SwitchSpeedRange speed;
+    u32 stageMultiplier = gStatStageRatios[mon->statStages[STAT_SPEED]][0];
+    u32 stageDivisor = gStatStageRatios[mon->statStages[STAT_SPEED]][1];
+
+    if (estimatePlayerSpread)
+    {
+        u32 baseSpeed = gSpeciesInfo[mon->species].baseSpeed;
+        speed.min = ((2 * baseSpeed) * mon->level) / 100 + 5;
+        speed.max = ((2 * baseSpeed + 31 + 63) * mon->level) / 100 + 5;
+        speed.min = speed.min * 90 / 100;
+        speed.max = speed.max * 110 / 100;
+    }
+    else
+    {
+        speed.min = mon->speed;
+        speed.max = mon->speed;
+    }
+
+    if ((mon->ability == ABILITY_SWIFT_SWIM && (gBattleWeather & B_WEATHER_RAIN))
+     || (mon->ability == ABILITY_CHLOROPHYLL && (gBattleWeather & B_WEATHER_SUN)))
+    {
+        speed.min *= 2;
+        speed.max *= 2;
+    }
+
+    speed.min = speed.min * stageMultiplier / stageDivisor;
+    speed.max = speed.max * stageMultiplier / stageDivisor;
+    if (GetBattlerSide(battlerId) == B_SIDE_PLAYER
+     && !(gBattleTypeFlags & BATTLE_TYPE_LINK)
+     && FlagGet(FLAG_BADGE03_GET))
+    {
+        speed.min = speed.min * 110 / 100;
+        speed.max = speed.max * 110 / 100;
+    }
+    if (mon->item == ITEM_MACHO_BRACE)
+    {
+        speed.min /= 2;
+        speed.max /= 2;
+    }
+    if (mon->status1 & STATUS1_PARALYSIS)
+    {
+        speed.min /= 4;
+        speed.max /= 4;
+    }
+
+    return speed;
+}
+
+static bool8 ShouldSwitchToAvoidSlowerKO(void)
+{
+    struct BattlePokemon activeMon = gBattleMons[gActiveBattler];
+    struct BattlePokemon opponentMon;
+    struct BattlePokemon candidate;
+    struct SwitchSpeedRange opponentSpeed[MAX_BATTLERS_COUNT];
+    u8 opposingBattlers[MAX_BATTLERS_COUNT];
+    u32 damageByMonAndOpponent[PARTY_SIZE][MAX_BATTLERS_COUNT];
+    u32 threatByMonAndOpponent[PARTY_SIZE][MAX_BATTLERS_COUNT];
+    s32 scoreByMon[PARTY_SIZE];
+    bool8 validMon[PARTY_SIZE];
+    bool8 preserveCounter[PARTY_SIZE];
+    u32 activeThreat = 0;
+    s32 bestScore = -0x7FFFFFFF;
+    u8 bestMonId = PARTY_SIZE;
+    u8 numOpponents = 0;
+    u8 i, j;
+    struct SwitchSpeedRange activeSpeed = GetSwitchSpeedRange(&activeMon, gActiveBattler, FALSE);
+
+    for (i = 0; i < PARTY_SIZE; ++i)
+    {
+        validMon[i] = FALSE;
+        preserveCounter[i] = FALSE;
+        scoreByMon[i] = -0x7FFFFFFF;
+        for (j = 0; j < MAX_BATTLERS_COUNT; ++j)
+        {
+            damageByMonAndOpponent[i][j] = 0;
+            threatByMonAndOpponent[i][j] = 0;
+        }
+    }
+
+    for (i = 0; i < MAX_BATTLERS_COUNT; ++i)
+    {
+        if (GetBattlerSide(i) == GetBattlerSide(gActiveBattler)
+         || (gAbsentBattlerFlags & gBitTable[i]))
+            continue;
+
+        RememberPlayerBattleKnowledge(i);
+        LoadKnownPlayerPokemon(&opponentMon, i);
+        opponentSpeed[numOpponents] = GetSwitchSpeedRange(&opponentMon, i, TRUE);
+        opposingBattlers[numOpponents] = i;
+        {
+            u32 threat = GetKnownPlayerPriorityThreat(i, &activeMon, NULL);
+
+            if (opponentSpeed[numOpponents].min > activeSpeed.max)
+            {
+                u32 speedThreat = GetKnownPlayerThreat(i, &activeMon);
+                if (speedThreat > threat)
+                    threat = speedThreat;
+            }
+            activeThreat += threat;
+            if (activeThreat > activeMon.hp)
+                activeThreat = activeMon.hp;
+        }
+        ++numOpponents;
+    }
+
+    if (numOpponents == 0 || activeThreat < activeMon.hp)
+        return FALSE;
+
+    for (i = 0; i < PARTY_SIZE; ++i)
+    {
+        u16 species = GetMonData(&gEnemyParty[i], MON_DATA_SPECIES_OR_EGG);
+        u32 incomingDamage = 0;
+        u32 outgoingDamage = 0;
+        bool8 safelyResists = FALSE;
+        bool8 canFasterKO = FALSE;
+        bool8 reducesThreat = FALSE;
+
+        if (species == SPECIES_NONE || species == SPECIES_EGG
+         || GetMonData(&gEnemyParty[i], MON_DATA_HP) == 0
+         || i == gBattlerPartyIndexes[gActiveBattler])
+            continue;
+        if ((gBattleTypeFlags & BATTLE_TYPE_DOUBLE)
+         && i == gBattlerPartyIndexes[GetBattlerAtPosition(GetBattlerPosition(gActiveBattler) ^ BIT_FLANK)])
+            continue;
+        if (i == *(gBattleStruct->monToSwitchIntoId + GetBattlerAtPosition(B_POSITION_OPPONENT_LEFT))
+         || i == *(gBattleStruct->monToSwitchIntoId + GetBattlerAtPosition(B_POSITION_OPPONENT_RIGHT)))
+            continue;
+
+        LoadSwitchCandidate(&candidate, i);
+        {
+            struct SwitchSpeedRange candidateSpeed = GetSwitchSpeedRange(&candidate, gActiveBattler, FALSE);
+
+            for (j = 0; j < numOpponents; ++j)
+            {
+                u8 opponent = opposingBattlers[j];
+                u32 threat = GetKnownPlayerThreat(opponent, &candidate);
+                u32 priorityThreat = GetKnownPlayerPriorityThreat(opponent, &candidate, NULL);
+                u32 activeDamage = 0;
+
+                if (priorityThreat > threat)
+                    threat = priorityThreat;
+                incomingDamage += threat;
+                threatByMonAndOpponent[i][j] = threat;
+
+                if (opponentSpeed[j].min > activeSpeed.max)
+                    activeDamage = GetKnownPlayerThreat(opponent, &activeMon);
+                {
+                    u32 priorityDamage = GetKnownPlayerPriorityThreat(opponent, &activeMon, NULL);
+                    if (priorityDamage > activeDamage)
+                        activeDamage = priorityDamage;
+                }
+                if (activeDamage != 0 && threat <= activeDamage / 2)
+                    reducesThreat = TRUE;
+            }
+
+            safelyResists = incomingDamage < candidate.hp && reducesThreat;
+
+            for (j = 0; j < numOpponents; ++j)
+            {
+                u8 opponent = opposingBattlers[j];
+                u8 moveSlot;
+                s8 opponentPriority;
+                u32 bestMoveDamage = 0;
+
+                GetKnownPlayerPriorityThreat(opponent, &candidate, &opponentPriority);
+                LoadKnownPlayerPokemon(&opponentMon, opponent);
+                for (moveSlot = 0; moveSlot < MAX_MON_MOVES; ++moveSlot)
+                {
+                    u16 move = candidate.moves[moveSlot];
+                    u32 damage;
+
+                    if (move == MOVE_NONE || candidate.pp[moveSlot] == 0)
+                        continue;
+                    if (gBattleMoves[move].priority < opponentPriority
+                     || (gBattleMoves[move].priority == opponentPriority
+                      && candidateSpeed.min <= opponentSpeed[j].max))
+                        continue;
+
+                    damage = GetSwitchMoveDamage(&candidate, &opponentMon, move, 0, gActiveBattler, opponent);
+                    if (damage > bestMoveDamage)
+                        bestMoveDamage = damage;
+                }
+                if (bestMoveDamage >= opponentMon.hp
+                 && incomingDamage - threatByMonAndOpponent[i][j] < candidate.hp)
+                {
+                    canFasterKO = TRUE;
+                    break;
+                }
+            }
+        }
+
+        if (!safelyResists && !canFasterKO)
+            continue;
+
+        validMon[i] = TRUE;
+        for (j = 0; j < numOpponents; ++j)
+        {
+            u8 opponent = opposingBattlers[j];
+            u8 moveSlot;
+            u32 bestMoveDamage = 0;
+
+            LoadKnownPlayerPokemon(&opponentMon, opponent);
+            for (moveSlot = 0; moveSlot < MAX_MON_MOVES; ++moveSlot)
+            {
+                u16 move = candidate.moves[moveSlot];
+                u32 damage;
+
+                if (move == MOVE_NONE || candidate.pp[moveSlot] == 0)
+                    continue;
+                damage = GetSwitchMoveDamage(&candidate, &opponentMon, move, 0, gActiveBattler, opponent);
+                if (damage > bestMoveDamage)
+                    bestMoveDamage = damage;
+            }
+            if (bestMoveDamage > opponentMon.hp)
+                bestMoveDamage = opponentMon.hp;
+            damageByMonAndOpponent[i][j] = bestMoveDamage;
+            outgoingDamage += bestMoveDamage;
+        }
+        scoreByMon[i] = (s32)outgoingDamage - (s32)incomingDamage;
+    }
+
+    for (j = 0; j < numOpponents; ++j)
+    {
+        u8 opponent = opposingBattlers[j];
+        u8 opponentPartyId = gBattleStruct->battlerPartyIndexes[opponent];
+        u8 strongestCounter = PARTY_SIZE;
+        u32 strongestDamage = 0;
+        u32 alternativeThreshold;
+        u32 significantDamageThreshold;
+        u8 alternativeCount = 0;
+
+        if (opponentPartyId >= PARTY_SIZE)
+            continue;
+        alternativeThreshold = gBattleMons[opponent].maxHP / 8;
+        if (alternativeThreshold == 0)
+            alternativeThreshold = 1;
+
+        for (i = 0; i < PARTY_SIZE; ++i)
+        {
+            if (validMon[i] && damageByMonAndOpponent[i][j] > strongestDamage)
+            {
+                strongestDamage = damageByMonAndOpponent[i][j];
+                strongestCounter = i;
+            }
+        }
+
+        if (strongestCounter == PARTY_SIZE)
+            continue;
+        significantDamageThreshold = GetMonData(&gEnemyParty[strongestCounter], MON_DATA_MAX_HP) / 4;
+        if (significantDamageThreshold == 0)
+            significantDamageThreshold = 1;
+        if (threatByMonAndOpponent[strongestCounter][j] < significantDamageThreshold)
+            continue;
+
+        for (i = 0; i < PARTY_SIZE; ++i)
+        {
+            if (validMon[i] && i != strongestCounter
+             && damageByMonAndOpponent[i][j] >= alternativeThreshold)
+                ++alternativeCount;
+        }
+        if (alternativeCount != 0)
+            preserveCounter[strongestCounter] = TRUE;
+    }
+
+    for (i = 0; i < PARTY_SIZE; ++i)
+    {
+        if (!validMon[i] || preserveCounter[i])
+            continue;
+        if (bestMonId == PARTY_SIZE || scoreByMon[i] > bestScore)
+        {
+            bestMonId = i;
+            bestScore = scoreByMon[i];
+        }
+    }
+
+    if (bestMonId == PARTY_SIZE)
+    {
+        for (i = 0; i < PARTY_SIZE; ++i)
+        {
+            if (!validMon[i])
+                continue;
+            if (bestMonId == PARTY_SIZE || scoreByMon[i] > bestScore)
+            {
+                bestMonId = i;
+                bestScore = scoreByMon[i];
+            }
+        }
+    }
+
+    if (bestMonId == PARTY_SIZE)
+        return FALSE;
+
+    *(gBattleStruct->AI_monToSwitchIntoId + (GetBattlerPosition(gActiveBattler) >> 1)) = bestMonId;
+    return TRUE;
 }
 
 static void LoadSwitchCandidate(struct BattlePokemon *mon, u8 partyId)
@@ -596,6 +961,11 @@ u8 GetMostSuitableMonToSwitchInto(void)
     struct BattlePokemon candidate;
     struct BattlePokemon opponentMon;
     u8 opposingBattlers[MAX_BATTLERS_COUNT];
+    u32 damageByMonAndOpponent[PARTY_SIZE][MAX_BATTLERS_COUNT];
+    u32 threatByMonAndOpponent[PARTY_SIZE][MAX_BATTLERS_COUNT];
+    s32 scoreByMon[PARTY_SIZE];
+    bool8 validMon[PARTY_SIZE];
+    bool8 preserveCounter[PARTY_SIZE];
     u8 numOpponents = 0;
     u8 bestMonId = PARTY_SIZE;
     u32 bestDamage = 0;
@@ -606,6 +976,18 @@ u8 GetMostSuitableMonToSwitchInto(void)
 
     if (*(gBattleStruct->monToSwitchIntoId + gActiveBattler) != PARTY_SIZE)
         return *(gBattleStruct->monToSwitchIntoId + gActiveBattler);
+
+    for (i = 0; i < PARTY_SIZE; ++i)
+    {
+        validMon[i] = FALSE;
+        preserveCounter[i] = FALSE;
+        scoreByMon[i] = -0x7FFFFFFF;
+        for (j = 0; j < MAX_BATTLERS_COUNT; ++j)
+        {
+            damageByMonAndOpponent[i][j] = 0;
+            threatByMonAndOpponent[i][j] = 0;
+        }
+    }
 
     for (i = 0; i < MAX_BATTLERS_COUNT; ++i)
     {
@@ -622,7 +1004,6 @@ u8 GetMostSuitableMonToSwitchInto(void)
         u16 species = GetMonData(&gEnemyParty[i], MON_DATA_SPECIES_OR_EGG);
         u32 totalDamage = 0;
         u32 incomingDamage = 0;
-        u16 hp;
         s32 score;
         u32 totalThreat = 0;
 
@@ -638,9 +1019,7 @@ u8 GetMostSuitableMonToSwitchInto(void)
         if (i == *(gBattleStruct->monToSwitchIntoId + GetBattlerAtPosition(B_POSITION_OPPONENT_LEFT))
          || i == *(gBattleStruct->monToSwitchIntoId + GetBattlerAtPosition(B_POSITION_OPPONENT_RIGHT)))
             continue;
-
         LoadSwitchCandidate(&candidate, i);
-        hp = candidate.hp;
 
         for (j = 0; j < numOpponents; ++j)
         {
@@ -688,24 +1067,480 @@ u8 GetMostSuitableMonToSwitchInto(void)
                 bestMoveDamage = opponentMon.hp;
             totalDamage += bestMoveDamage;
             totalThreat += bestIncomingDamage;
+            damageByMonAndOpponent[i][j] = bestMoveDamage;
+            threatByMonAndOpponent[i][j] = bestIncomingDamage;
         }
         incomingDamage = totalThreat;
 
         score = (s32)totalDamage - (s32)incomingDamage;
-        if (bestMonId == PARTY_SIZE || score > bestScore
-         || (score == bestScore && (totalDamage > bestDamage
-          || (totalDamage == bestDamage && (incomingDamage < bestThreat
-           || (incomingDamage == bestThreat && hp > bestHp))))))
+        validMon[i] = TRUE;
+        scoreByMon[i] = score;
+    }
+
+    for (j = 0; j < numOpponents; ++j)
+    {
+        u8 opponent = opposingBattlers[j];
+        u8 opponentPartyId = gBattleStruct->battlerPartyIndexes[opponent];
+        u8 strongestCounter = PARTY_SIZE;
+        u32 strongestDamage = 0;
+        u32 alternativeThreshold;
+        u32 significantDamageThreshold = 1;
+        u8 alternativeCount = 0;
+
+        if (opponentPartyId >= PARTY_SIZE)
+            continue;
+
+        alternativeThreshold = gBattleMons[opponent].maxHP / 8;
+        if (alternativeThreshold == 0)
+            alternativeThreshold = 1;
+
+        for (i = 0; i < PARTY_SIZE; ++i)
+        {
+            if (validMon[i] && damageByMonAndOpponent[i][j] > strongestDamage)
+            {
+                strongestDamage = damageByMonAndOpponent[i][j];
+                strongestCounter = i;
+            }
+        }
+
+        if (strongestCounter != PARTY_SIZE)
+        {
+            significantDamageThreshold = GetMonData(&gEnemyParty[strongestCounter], MON_DATA_MAX_HP) / 4;
+            if (significantDamageThreshold == 0)
+                significantDamageThreshold = 1;
+        }
+
+        if (strongestCounter == PARTY_SIZE
+         || strongestDamage < alternativeThreshold
+         || threatByMonAndOpponent[strongestCounter][j] < significantDamageThreshold)
+            continue;
+
+        for (i = 0; i < PARTY_SIZE; ++i)
+        {
+            if (validMon[i] && i != strongestCounter
+             && damageByMonAndOpponent[i][j] >= alternativeThreshold)
+                ++alternativeCount;
+        }
+
+        if (alternativeCount != 0)
+            preserveCounter[strongestCounter] = TRUE;
+    }
+
+    bestMonId = PARTY_SIZE;
+    bestScore = -0x7FFFFFFF;
+    bestDamage = 0;
+    bestThreat = 0xFFFFFFFF;
+    bestHp = 0;
+    for (i = 0; i < PARTY_SIZE; ++i)
+    {
+        u16 hp;
+        u32 damage = 0;
+        u32 threat = 0;
+
+        if (!validMon[i] || preserveCounter[i])
+            continue;
+
+        for (j = 0; j < numOpponents; ++j)
+        {
+            damage += damageByMonAndOpponent[i][j];
+            threat += threatByMonAndOpponent[i][j];
+        }
+        hp = GetMonData(&gEnemyParty[i], MON_DATA_HP);
+
+        if (bestMonId == PARTY_SIZE || scoreByMon[i] > bestScore
+         || (scoreByMon[i] == bestScore && (damage > bestDamage
+          || (damage == bestDamage && (threat < bestThreat
+           || (threat == bestThreat && hp > bestHp))))))
         {
             bestMonId = i;
-            bestScore = score;
-            bestDamage = totalDamage;
-            bestThreat = incomingDamage;
+            bestScore = scoreByMon[i];
+            bestDamage = damage;
+            bestThreat = threat;
             bestHp = hp;
         }
     }
 
+    if (bestMonId == PARTY_SIZE)
+    {
+        for (i = 0; i < PARTY_SIZE; ++i)
+        {
+            if (!validMon[i])
+                continue;
+            if (bestMonId == PARTY_SIZE || scoreByMon[i] > bestScore)
+            {
+                bestMonId = i;
+                bestScore = scoreByMon[i];
+            }
+        }
+    }
+
     return bestMonId;
+}
+
+static u32 GetKnownPlayerThreat(u8 battlerId, struct BattlePokemon *defender)
+{
+    struct BattlePokemon opponent;
+    struct PlayerPartyKnowledge *knowledge;
+    u8 partyId = gBattleStruct->battlerPartyIndexes[battlerId];
+    u8 i;
+    u32 bestDamage = 0;
+
+    if (partyId >= PARTY_SIZE)
+        return 0;
+
+    knowledge = &gBattleResources->battleHistory->playerParty[partyId];
+    LoadKnownPlayerPokemon(&opponent, battlerId);
+    for (i = 0; i < MAX_MON_MOVES; ++i)
+    {
+        u16 move = knowledge->moves[i];
+        u32 damage;
+
+        if (move == MOVE_NONE || move >= MOVES_COUNT)
+            continue;
+        damage = GetSwitchMoveDamage(&opponent, defender, move, 0, battlerId, gActiveBattler);
+        if (damage > bestDamage)
+            bestDamage = damage;
+    }
+
+    {
+        u32 inferredDamage = GetInferredStabDamage(&opponent, defender, battlerId, gActiveBattler);
+        if (inferredDamage > bestDamage)
+            bestDamage = inferredDamage;
+    }
+
+    return bestDamage;
+}
+
+static u32 GetKnownPlayerPriorityThreat(u8 battlerId, struct BattlePokemon *defender, s8 *priority)
+{
+    struct BattlePokemon opponent;
+    struct PlayerPartyKnowledge *knowledge;
+    u16 possibleMoves[MAX_LEVEL_UP_MOVES];
+    u8 partyId = gBattleStruct->battlerPartyIndexes[battlerId];
+    u8 i;
+    u32 bestDamage = 0;
+    s8 highestPriority = 0;
+
+    if (priority != NULL)
+        *priority = 0;
+    if (partyId >= PARTY_SIZE)
+        return 0;
+
+    knowledge = &gBattleResources->battleHistory->playerParty[partyId];
+    LoadKnownPlayerPokemon(&opponent, battlerId);
+    for (i = 0; i < MAX_MON_MOVES; ++i)
+    {
+        u16 move = knowledge->moves[i];
+        u32 damage;
+
+        if (move == MOVE_NONE || move >= MOVES_COUNT || gBattleMoves[move].priority <= 0
+         || gBattleMoves[move].power == 0)
+            continue;
+
+        if (gBattleMoves[move].priority > highestPriority)
+            highestPriority = gBattleMoves[move].priority;
+        damage = GetSwitchMoveDamage(&opponent, defender, move, 0, battlerId, gActiveBattler);
+        if (damage > bestDamage)
+            bestDamage = damage;
+    }
+
+    if (gDisableStructs[battlerId].isFirstTurn)
+    {
+        u8 numMoves = GetLevelUpMovesBySpecies(opponent.species, possibleMoves);
+
+        for (i = 0; i < numMoves; ++i)
+        {
+            u16 move = possibleMoves[i];
+            u8 learnsetIndex;
+            bool8 availableAtLevel = FALSE;
+
+            if (move >= MOVES_COUNT || gBattleMoves[move].priority <= 0
+             || gBattleMoves[move].power == 0)
+                continue;
+
+            for (learnsetIndex = 0;
+                 learnsetIndex < MAX_LEVEL_UP_MOVES
+              && gLevelUpLearnsets[opponent.species][learnsetIndex] != LEVEL_UP_END;
+                 ++learnsetIndex)
+            {
+                u16 entry = gLevelUpLearnsets[opponent.species][learnsetIndex];
+
+                if ((entry & LEVEL_UP_MOVE_ID) == move
+                 && ((entry & LEVEL_UP_MOVE_LV) >> 9) <= opponent.level)
+                {
+                    availableAtLevel = TRUE;
+                    break;
+                }
+            }
+            if (!availableAtLevel)
+                continue;
+
+            if (gBattleMoves[move].priority > highestPriority)
+                highestPriority = gBattleMoves[move].priority;
+            {
+                u32 damage = GetSwitchMoveDamage(&opponent, defender, move, 0, battlerId, gActiveBattler);
+                if (damage > bestDamage)
+                    bestDamage = damage;
+            }
+        }
+    }
+
+    if (priority != NULL)
+        *priority = highestPriority;
+    return bestDamage;
+}
+
+static bool8 ShouldSwitchForBadMatchup(void)
+{
+    struct BattlePokemon activeMon = gBattleMons[gActiveBattler];
+    struct BattlePokemon opponentMon;
+    struct BattlePokemon candidate;
+    u8 opposingBattlers[MAX_BATTLERS_COUNT];
+    u8 numOpponents = 0;
+    u8 i, j;
+    u32 activeThreat = 0;
+    s32 bestScore;
+    u8 bestMonId = PARTY_SIZE;
+    s32 bestCandidateScore = 0;
+
+    if (HasUsefulStatusOrSetupMove())
+        return FALSE;
+
+    for (i = 0; i < MAX_BATTLERS_COUNT; ++i)
+    {
+        u8 partyId;
+
+        if (GetBattlerSide(i) == GetBattlerSide(gActiveBattler)
+         || (gAbsentBattlerFlags & gBitTable[i]))
+            continue;
+
+        partyId = gBattleStruct->battlerPartyIndexes[i];
+        if (partyId >= PARTY_SIZE)
+            continue;
+        RememberPlayerBattleKnowledge(i);
+        LoadKnownPlayerPokemon(&opponentMon, i);
+        opposingBattlers[numOpponents++] = i;
+
+        if (HasEffectiveDamagingMove(&activeMon, gActiveBattler, &opponentMon, i))
+            return FALSE;
+
+        activeThreat += GetKnownPlayerThreat(i, &activeMon);
+        if (activeThreat > activeMon.hp)
+            activeThreat = activeMon.hp;
+    }
+
+    if (numOpponents == 0)
+        return FALSE;
+
+    bestScore = -(s32)activeThreat;
+    for (i = 0; i < PARTY_SIZE; ++i)
+    {
+        u16 species = GetMonData(&gEnemyParty[i], MON_DATA_SPECIES_OR_EGG);
+        u32 outgoingDamage = 0;
+        u32 incomingDamage = 0;
+        s32 score;
+
+        if (species == SPECIES_NONE || species == SPECIES_EGG
+         || GetMonData(&gEnemyParty[i], MON_DATA_HP) == 0
+         || i == gBattlerPartyIndexes[gActiveBattler])
+            continue;
+
+        if ((gBattleTypeFlags & BATTLE_TYPE_DOUBLE)
+         && i == gBattlerPartyIndexes[GetBattlerAtPosition(GetBattlerPosition(gActiveBattler) ^ BIT_FLANK)])
+            continue;
+
+        if (i == *(gBattleStruct->monToSwitchIntoId + GetBattlerAtPosition(B_POSITION_OPPONENT_LEFT))
+         || i == *(gBattleStruct->monToSwitchIntoId + GetBattlerAtPosition(B_POSITION_OPPONENT_RIGHT)))
+            continue;
+
+        LoadSwitchCandidate(&candidate, i);
+        for (j = 0; j < numOpponents; ++j)
+        {
+            u8 opponent = opposingBattlers[j];
+            u8 moveSlot;
+            u32 bestDamage = 0;
+
+            LoadKnownPlayerPokemon(&opponentMon, opponent);
+            for (moveSlot = 0; moveSlot < MAX_MON_MOVES; ++moveSlot)
+            {
+                u16 move = candidate.moves[moveSlot];
+                u32 damage;
+
+                if (move == MOVE_NONE || candidate.pp[moveSlot] == 0)
+                    continue;
+                damage = GetSwitchMoveDamage(&candidate, &opponentMon, move, 0, gActiveBattler, opponent);
+                if (damage > bestDamage)
+                    bestDamage = damage;
+            }
+            if (bestDamage > opponentMon.hp)
+                bestDamage = opponentMon.hp;
+            outgoingDamage += bestDamage;
+
+            incomingDamage += GetKnownPlayerThreat(opponent, &candidate);
+            if (incomingDamage > candidate.hp)
+                incomingDamage = candidate.hp;
+        }
+
+        score = (s32)outgoingDamage - (s32)incomingDamage;
+        if (bestMonId == PARTY_SIZE || score > bestCandidateScore)
+        {
+            bestMonId = i;
+            bestCandidateScore = score;
+        }
+    }
+
+    if (bestMonId != PARTY_SIZE && bestCandidateScore > bestScore)
+    {
+        *(gBattleStruct->AI_monToSwitchIntoId + (GetBattlerPosition(gActiveBattler) >> 1)) = bestMonId;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static bool8 HasUsefulStatusOrSetupMove(void)
+{
+    u8 battlerSide = GetBattlerSide(gActiveBattler);
+    u8 opposingBattler = GetBattlerAtPosition(B_POSITION_PLAYER_LEFT);
+    u8 i;
+
+    if (gAbsentBattlerFlags & gBitTable[opposingBattler])
+        opposingBattler = GetBattlerAtPosition(B_POSITION_PLAYER_RIGHT);
+    if (gAbsentBattlerFlags & gBitTable[opposingBattler])
+        return FALSE;
+
+    for (i = 0; i < MAX_MON_MOVES; ++i)
+    {
+        u16 move = gBattleMons[gActiveBattler].moves[i];
+        u16 effect;
+
+        if (move == MOVE_NONE || gBattleMons[gActiveBattler].pp[i] == 0
+         || gBattleMoves[move].power != 0
+         || gDisableStructs[gActiveBattler].disabledMove == move
+         || (gDisableStructs[gActiveBattler].encoredMove != MOVE_NONE
+          && gDisableStructs[gActiveBattler].encoredMove != move))
+            continue;
+
+        effect = gBattleMoves[move].effect;
+        switch (effect)
+        {
+        case EFFECT_SLEEP:
+        case EFFECT_POISON:
+        case EFFECT_TOXIC:
+        case EFFECT_PARALYZE:
+        case EFFECT_CONFUSE:
+        case EFFECT_WILL_O_WISP:
+        case EFFECT_YAWN:
+            if (gBattleMons[opposingBattler].status1 == 0
+             && !(gBattleMons[opposingBattler].status2 & STATUS2_CONFUSION))
+                return TRUE;
+            break;
+        case EFFECT_ATTACK_UP:
+        case EFFECT_ATTACK_UP_2:
+            if (gBattleMons[gActiveBattler].statStages[STAT_ATK] < MAX_STAT_STAGE)
+                return TRUE;
+            break;
+        case EFFECT_DEFENSE_UP:
+        case EFFECT_DEFENSE_UP_2:
+            if (gBattleMons[gActiveBattler].statStages[STAT_DEF] < MAX_STAT_STAGE)
+                return TRUE;
+            break;
+        case EFFECT_SPEED_UP:
+        case EFFECT_SPEED_UP_2:
+            if (gBattleMons[gActiveBattler].statStages[STAT_SPEED] < MAX_STAT_STAGE)
+                return TRUE;
+            break;
+        case EFFECT_ACCURACY_UP:
+        case EFFECT_ACCURACY_UP_2:
+            if (gBattleMons[gActiveBattler].statStages[STAT_ACC] < MAX_STAT_STAGE)
+                return TRUE;
+            break;
+        case EFFECT_EVASION_UP:
+        case EFFECT_EVASION_UP_2:
+            if (gBattleMons[gActiveBattler].statStages[STAT_EVASION] < MAX_STAT_STAGE)
+                return TRUE;
+            break;
+        case EFFECT_SPECIAL_ATTACK_UP:
+        case EFFECT_SPECIAL_ATTACK_UP_2:
+            if (gBattleMons[gActiveBattler].statStages[STAT_SPATK] < MAX_STAT_STAGE)
+                return TRUE;
+            break;
+        case EFFECT_SPECIAL_DEFENSE_UP:
+        case EFFECT_SPECIAL_DEFENSE_UP_2:
+            if (gBattleMons[gActiveBattler].statStages[STAT_SPDEF] < MAX_STAT_STAGE)
+                return TRUE;
+            break;
+        case EFFECT_BELLY_DRUM:
+            if (gBattleMons[gActiveBattler].statStages[STAT_ATK] < MAX_STAT_STAGE
+             && gBattleMons[gActiveBattler].hp > gBattleMons[gActiveBattler].maxHP / 2)
+                return TRUE;
+            break;
+        case EFFECT_FOCUS_ENERGY:
+            if (!(gBattleMons[gActiveBattler].status2 & STATUS2_FOCUS_ENERGY))
+                return TRUE;
+            break;
+        case EFFECT_DEFENSE_CURL:
+            if (gBattleMons[gActiveBattler].statStages[STAT_DEF] < MAX_STAT_STAGE)
+                return TRUE;
+            break;
+        case EFFECT_SUBSTITUTE:
+            if (!(gBattleMons[gActiveBattler].status2 & STATUS2_SUBSTITUTE)
+             && gBattleMons[gActiveBattler].hp > gBattleMons[gActiveBattler].maxHP / 4)
+                return TRUE;
+            break;
+        case EFFECT_REFLECT:
+            if (!(gSideStatuses[battlerSide] & SIDE_STATUS_REFLECT))
+                return TRUE;
+            break;
+        case EFFECT_LIGHT_SCREEN:
+            if (!(gSideStatuses[battlerSide] & SIDE_STATUS_LIGHTSCREEN))
+                return TRUE;
+            break;
+        case EFFECT_SPIKES:
+            if (!(gSideStatuses[GetBattlerSide(opposingBattler)] & SIDE_STATUS_SPIKES))
+                return TRUE;
+            break;
+        case EFFECT_MIST:
+            if (!(gSideStatuses[battlerSide] & SIDE_STATUS_MIST))
+                return TRUE;
+            break;
+        case EFFECT_SAFEGUARD:
+            if (!(gSideStatuses[battlerSide] & SIDE_STATUS_SAFEGUARD))
+                return TRUE;
+            break;
+        case EFFECT_RAIN_DANCE:
+            if (!(gBattleWeather & B_WEATHER_RAIN))
+                return TRUE;
+            break;
+        case EFFECT_SUNNY_DAY:
+            if (!(gBattleWeather & B_WEATHER_SUN))
+                return TRUE;
+            break;
+        case EFFECT_SANDSTORM:
+            if (!(gBattleWeather & B_WEATHER_SANDSTORM))
+                return TRUE;
+            break;
+        case EFFECT_HAIL:
+            if (!(gBattleWeather & B_WEATHER_HAIL))
+                return TRUE;
+            break;
+        case EFFECT_RESTORE_HP:
+        case EFFECT_MORNING_SUN:
+        case EFFECT_SYNTHESIS:
+        case EFFECT_MOONLIGHT:
+        case EFFECT_SOFTBOILED:
+        case EFFECT_SWALLOW:
+            if (gBattleMons[gActiveBattler].hp < gBattleMons[gActiveBattler].maxHP / 2)
+                return TRUE;
+            break;
+        case EFFECT_REST:
+            if (gBattleMons[gActiveBattler].hp < gBattleMons[gActiveBattler].maxHP
+             && gBattleMons[gActiveBattler].status1 == 0)
+                return TRUE;
+            break;
+        }
+    }
+
+    return FALSE;
 }
 
 static u8 GetAI_ItemType(u8 itemId, const u8 *itemEffect) // NOTE: should take u16 as item Id argument
