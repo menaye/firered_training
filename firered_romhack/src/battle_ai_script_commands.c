@@ -8,6 +8,7 @@
 #include "constants/abilities.h"
 #include "constants/battle_ai.h"
 #include "constants/battle_move_effects.h"
+#include "constants/items.h"
 #include "constants/moves.h"
 
 #define AI_ACTION_DONE          0x0001
@@ -358,10 +359,22 @@ void BattleAI_SetupAIData(void)
     }
     else
     {
-        AI_THINKING_STRUCT->aiFlags = (AI_SCRIPT_CHECK_BAD_MOVE | AI_SCRIPT_TRY_TO_FAINT | AI_SCRIPT_CHECK_VIABILITY);
+        AI_THINKING_STRUCT->aiFlags = (AI_SCRIPT_CHECK_BAD_MOVE
+                                     | AI_SCRIPT_TRY_TO_FAINT
+                                     | AI_SCRIPT_CHECK_VIABILITY
+                                     | AI_SCRIPT_SETUP_FIRST_TURN
+                                     | AI_SCRIPT_HP_AWARE);
         return;
     }
     AI_THINKING_STRUCT->aiFlags = gTrainers[gTrainerBattleOpponent_A].aiFlags;
+    if (gBattleTypeFlags & BATTLE_TYPE_TRAINER)
+    {
+        AI_THINKING_STRUCT->aiFlags |= AI_SCRIPT_CHECK_BAD_MOVE
+                                     | AI_SCRIPT_TRY_TO_FAINT
+                                     | AI_SCRIPT_CHECK_VIABILITY
+                                     | AI_SCRIPT_SETUP_FIRST_TURN
+                                     | AI_SCRIPT_HP_AWARE;
+    }
 }
 
 u8 BattleAI_ChooseMoveOrAction(void)
@@ -463,6 +476,29 @@ static void RecordLastUsedMoveByTarget(void)
 {
     s32 i;
 
+    if (GetBattlerSide(gBattlerTarget) == B_SIDE_PLAYER
+     && gLastMoves[gBattlerTarget] != MOVE_NONE
+     && gLastMoves[gBattlerTarget] != MOVE_UNAVAILABLE)
+    {
+        u8 partyId = gBattleStruct->battlerPartyIndexes[gBattlerTarget];
+
+        if (partyId < PARTY_SIZE)
+        {
+            struct PlayerPartyKnowledge *knowledge = &BATTLE_HISTORY->playerParty[partyId];
+
+            for (i = 0; i < MAX_MON_MOVES; i++)
+            {
+                if (knowledge->moves[i] == gLastMoves[gBattlerTarget])
+                    break;
+                if (knowledge->moves[i] == MOVE_NONE)
+                {
+                    knowledge->moves[i] = gLastMoves[gBattlerTarget];
+                    break;
+                }
+            }
+        }
+    }
+
 #ifndef BUGFIX // Loops to 8 and divides by 2 instead of looping to 4
     for (i = 0; i < MAX_MON_MOVES * 2; i++)
     {
@@ -503,6 +539,17 @@ static void ClearBattlerMoveHistory(u8 battlerId)
 
 void RecordAbilityBattle(u8 battlerId, u8 abilityId)
 {
+    if (GetBattlerSide(battlerId) == B_SIDE_PLAYER)
+    {
+        u8 partyId = gBattleStruct->battlerPartyIndexes[battlerId];
+
+        if (partyId < PARTY_SIZE)
+        {
+            BATTLE_HISTORY->playerParty[partyId].ability = abilityId;
+            BATTLE_HISTORY->playerParty[partyId].abilityKnown = TRUE;
+        }
+    }
+
 #ifndef BUGFIX // Only records one ability for the whole side
     if (GetBattlerSide(battlerId) == 0)
         BATTLE_HISTORY->abilities[GET_BATTLER_SIDE(battlerId)] = abilityId;
@@ -513,6 +560,21 @@ void RecordAbilityBattle(u8 battlerId, u8 abilityId)
 
 void RecordItemEffectBattle(u8 battlerId, u8 itemEffect)
 {
+    if (GetBattlerSide(battlerId) == B_SIDE_PLAYER)
+    {
+        u8 partyId = gBattleStruct->battlerPartyIndexes[battlerId];
+        u16 item = gBattleMons[battlerId].item;
+
+        if (item == ITEM_NONE)
+            item = gBattleStruct->usedHeldItems[battlerId];
+
+        if (partyId < PARTY_SIZE && item != ITEM_NONE)
+        {
+            BATTLE_HISTORY->playerParty[partyId].item = item;
+            BATTLE_HISTORY->playerParty[partyId].itemKnown = TRUE;
+        }
+    }
+
 #ifndef BUGFIX // Only records one item for the whole side
     if (GetBattlerSide(battlerId) == 0)
         BATTLE_HISTORY->itemEffects[GET_BATTLER_SIDE(battlerId)] = itemEffect;

@@ -292,6 +292,15 @@ struct UsedMoves
     u16 unknown[MAX_BATTLERS_COUNT];
 };
 
+struct PlayerPartyKnowledge
+{
+    u16 moves[MAX_MON_MOVES];
+    u16 item;
+    u8 ability;
+    bool8 itemKnown;
+    bool8 abilityKnown;
+};
+
 #ifndef BUGFIX
 struct BattleHistory
 {
@@ -300,6 +309,7 @@ struct BattleHistory
     /*0x22*/ u8 itemEffects[MAX_BATTLERS_COUNT / 2];
     /*0x24*/ u16 trainerItems[MAX_BATTLERS_COUNT];
     /*0x2C*/ u8 itemsNo;
+    struct PlayerPartyKnowledge playerParty[PARTY_SIZE];
 };
 #else
 struct BattleHistory
@@ -309,6 +319,7 @@ struct BattleHistory
     u8 itemEffects[MAX_BATTLERS_COUNT];
     u16 trainerItems[MAX_BATTLERS_COUNT];
     u8 itemsNo;
+    struct PlayerPartyKnowledge playerParty[PARTY_SIZE];
 };
 #endif
 

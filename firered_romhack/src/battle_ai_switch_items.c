@@ -5,6 +5,7 @@
 #include "random.h"
 #include "util.h"
 #include "constants/abilities.h"
+#include "constants/battle_move_effects.h"
 #include "constants/item_effects.h"
 #include "constants/items.h"
 #include "constants/moves.h"
@@ -425,121 +426,285 @@ static void ModulateByTypeEffectiveness(u8 atkType, u8 defType1, u8 defType2, u8
     }
 }
 
-u8 GetMostSuitableMonToSwitchInto(void)
+static u32 GetSwitchMoveDamage(struct BattlePokemon *attacker, struct BattlePokemon *defender, u16 move, u16 powerOverride, u8 attackerId, u8 defenderId)
 {
-    u8 opposingBattler;
-    u8 bestDmg; // Note : should be changed to u32 for obvious reasons.
-    u8 bestMonId;
-    u8 battlerIn1, battlerIn2;
-    s32 i, j;
-    u8 invalidMons;
-    u16 move;
+    u16 currentMove = gCurrentMove;
+    u16 currentMovePower = gBattleMovePower;
+    u16 currentDynamicBasePower = gDynamicBasePower;
+    u8 currentCritMultiplier = gCritMultiplier;
+    u8 currentBattlerAttacker = gBattlerAttacker;
+    u8 currentBattlerTarget = gBattlerTarget;
+    u8 currentDynamicMoveType = gBattleStruct->dynamicMoveType;
+    u8 currentDamageMultiplier = gBattleScripting.dmgMultiplier;
+    u32 currentMoveResultFlags = gMoveResultFlags;
+    u8 typeMultiplier = 10;
+    s32 damage;
 
-    if (*(gBattleStruct->monToSwitchIntoId + gActiveBattler) != PARTY_SIZE)
-        return *(gBattleStruct->monToSwitchIntoId + gActiveBattler);
-    if (gBattleTypeFlags & BATTLE_TYPE_DOUBLE)
-    {
-        battlerIn1 = gActiveBattler;
-        if (gAbsentBattlerFlags & gBitTable[GetBattlerAtPosition(GetBattlerPosition(gActiveBattler) ^ BIT_FLANK)])
-            battlerIn2 = gActiveBattler;
-        else
-            battlerIn2 = GetBattlerAtPosition(GetBattlerPosition(gActiveBattler) ^ BIT_FLANK);
-        // UB: It considers the opponent only player's side even though it can battle alongside player.
-        opposingBattler = Random() & BIT_FLANK;
-        if (gAbsentBattlerFlags & gBitTable[opposingBattler])
-            opposingBattler ^= BIT_FLANK;
-    }
-    else
-    {
-        opposingBattler = GetBattlerAtPosition(B_POSITION_PLAYER_LEFT);
-        battlerIn1 = gActiveBattler;
-        battlerIn2 = gActiveBattler;
-    }
-    invalidMons = 0;
-    while (invalidMons != 0x3F) // All mons are invalid.
-    {
-        bestDmg = 0;
-        bestMonId = 6;
-        // Find the mon whose type is the most suitable offensively.
-        for (i = 0; i < PARTY_SIZE; ++i)
-        {
-            u16 species = GetMonData(&gEnemyParty[i], MON_DATA_SPECIES);
-            if (species != SPECIES_NONE
-                && GetMonData(&gEnemyParty[i], MON_DATA_HP) != 0
-                && !(gBitTable[i] & invalidMons)
-                && gBattlerPartyIndexes[battlerIn1] != i
-                && gBattlerPartyIndexes[battlerIn2] != i
-                && i != *(gBattleStruct->monToSwitchIntoId + battlerIn1)
-                && i != *(gBattleStruct->monToSwitchIntoId + battlerIn2))
-            {
-                u8 type1 = gSpeciesInfo[species].types[0];
-                u8 type2 = gSpeciesInfo[species].types[1];
-                u8 typeDmg = 10;
-                ModulateByTypeEffectiveness(gBattleMons[opposingBattler].type1, type1, type2, &typeDmg);
-                ModulateByTypeEffectiveness(gBattleMons[opposingBattler].type2, type1, type2, &typeDmg);
-                if (bestDmg < typeDmg)
-                {
-                    bestDmg = typeDmg;
-                    bestMonId = i;
-                }
-            }
-            else
-            {
-                invalidMons |= gBitTable[i];
-            }
-        }
-        // Ok, we know the mon has the right typing but does it have at least one super effective move?
-        if (bestMonId != PARTY_SIZE)
-        {
-            for (i = 0; i < MAX_MON_MOVES; ++i)
-            {
-                move = GetMonData(&gEnemyParty[bestMonId], MON_DATA_MOVE1 + i);
-                if (move != MOVE_NONE && TypeCalc(move, gActiveBattler, opposingBattler) & MOVE_RESULT_SUPER_EFFECTIVE)
-                    break;
-            }
-            if (i != MAX_MON_MOVES)
-                return bestMonId; // Has both the typing and at least one super effective move.
+    if (move == MOVE_NONE || move >= MOVES_COUNT || gBattleMoves[move].power == 0)
+        return 0;
 
-            invalidMons |= gBitTable[bestMonId]; // Sorry buddy, we want something better.
-        }
-        else
-        {
-            invalidMons = 0x3F; // No viable mon to switch.
-        }
-    }
+    gCurrentMove = move;
     gDynamicBasePower = 0;
     gBattleStruct->dynamicMoveType = 0;
     gBattleScripting.dmgMultiplier = 1;
     gMoveResultFlags = 0;
     gCritMultiplier = 1;
-    bestDmg = 0;
-    bestMonId = 6;
-    // If we couldn't find the best mon in terms of typing, find the one that deals most damage.
-    for (i = 0; i < PARTY_SIZE; ++i)
+    gBattlerAttacker = attackerId;
+    gBattlerTarget = defenderId;
+    damage = CalculateBaseDamage(attacker, defender, move, gSideStatuses[GET_BATTLER_SIDE(defenderId)],
+                                 powerOverride, 0, attackerId, defenderId);
+
+    if (AI_TypeCalc(move, defender->species, defender->ability) & (MOVE_RESULT_MISSED | MOVE_RESULT_DOESNT_AFFECT_FOE))
     {
-        if (((u16)(GetMonData(&gEnemyParty[i], MON_DATA_SPECIES)) == SPECIES_NONE)
-         || (GetMonData(&gEnemyParty[i], MON_DATA_HP) == 0)
-         || (gBattlerPartyIndexes[battlerIn1] == i)
-         || (gBattlerPartyIndexes[battlerIn2] == i)
-         || (i == *(gBattleStruct->monToSwitchIntoId + battlerIn1))
-         || (i == *(gBattleStruct->monToSwitchIntoId + battlerIn2)))
+        damage = 0;
+    }
+    else
+    {
+        if (attacker->type1 == gBattleMoves[move].type || attacker->type2 == gBattleMoves[move].type)
+            damage = damage * 15 / 10;
+        ModulateByTypeEffectiveness(gBattleMoves[move].type, defender->type1, defender->type2, &typeMultiplier);
+        damage = damage * typeMultiplier / 10;
+        if (powerOverride == 0 && gBattleMoves[move].accuracy != 0)
+            damage = damage * gBattleMoves[move].accuracy / 100;
+    }
+
+    gCurrentMove = currentMove;
+    gBattleMovePower = currentMovePower;
+    gDynamicBasePower = currentDynamicBasePower;
+    gCritMultiplier = currentCritMultiplier;
+    gBattlerAttacker = currentBattlerAttacker;
+    gBattlerTarget = currentBattlerTarget;
+    gBattleStruct->dynamicMoveType = currentDynamicMoveType;
+    gBattleScripting.dmgMultiplier = currentDamageMultiplier;
+    gMoveResultFlags = currentMoveResultFlags;
+
+    return damage > 0 ? damage : 0;
+}
+
+static u32 GetInferredStabDamage(struct BattlePokemon *attacker, struct BattlePokemon *defender, u8 attackerId, u8 defenderId)
+{
+    u32 bestDamage = 0;
+    u16 move;
+
+    for (move = 1; move < MOVES_COUNT; move++)
+    {
+        u8 type = gBattleMoves[move].type;
+        u32 damage;
+
+        if (gBattleMoves[move].effect != EFFECT_HIT
+         || gBattleMoves[move].power == 0
+         || (type != attacker->type1 && type != attacker->type2))
             continue;
-        for (j = 0; j < MAX_MON_MOVES; ++j)
+
+        damage = GetSwitchMoveDamage(attacker, defender, move, 60, attackerId, defenderId);
+        if (damage > bestDamage)
+            bestDamage = damage;
+    }
+
+    return bestDamage;
+}
+
+static void LoadSwitchCandidate(struct BattlePokemon *mon, u8 partyId)
+{
+    u8 i;
+    u16 species = GetMonData(&gEnemyParty[partyId], MON_DATA_SPECIES);
+    u8 abilityNum = GetMonData(&gEnemyParty[partyId], MON_DATA_ABILITY_NUM);
+
+    *mon = gBattleMons[gActiveBattler];
+    mon->species = species;
+    mon->attack = GetMonData(&gEnemyParty[partyId], MON_DATA_ATK);
+    mon->defense = GetMonData(&gEnemyParty[partyId], MON_DATA_DEF);
+    mon->speed = GetMonData(&gEnemyParty[partyId], MON_DATA_SPEED);
+    mon->spAttack = GetMonData(&gEnemyParty[partyId], MON_DATA_SPATK);
+    mon->spDefense = GetMonData(&gEnemyParty[partyId], MON_DATA_SPDEF);
+    mon->abilityNum = abilityNum;
+    mon->ability = gSpeciesInfo[species].abilities[abilityNum];
+    mon->type1 = gSpeciesInfo[species].types[0];
+    mon->type2 = gSpeciesInfo[species].types[1];
+    mon->level = GetMonData(&gEnemyParty[partyId], MON_DATA_LEVEL);
+    mon->hp = GetMonData(&gEnemyParty[partyId], MON_DATA_HP);
+    mon->maxHP = GetMonData(&gEnemyParty[partyId], MON_DATA_MAX_HP);
+    mon->item = GetMonData(&gEnemyParty[partyId], MON_DATA_HELD_ITEM);
+    mon->status1 = GetMonData(&gEnemyParty[partyId], MON_DATA_STATUS);
+    mon->status2 = 0;
+    for (i = 0; i < NUM_BATTLE_STATS; ++i)
+        mon->statStages[i] = DEFAULT_STAT_STAGE;
+    for (i = 0; i < MAX_MON_MOVES; ++i)
+    {
+        mon->moves[i] = GetMonData(&gEnemyParty[partyId], MON_DATA_MOVE1 + i);
+        mon->pp[i] = GetMonData(&gEnemyParty[partyId], MON_DATA_PP1 + i);
+    }
+}
+
+static void LoadKnownPlayerPokemon(struct BattlePokemon *mon, u8 battlerId)
+{
+    u8 partyId = gBattleStruct->battlerPartyIndexes[battlerId];
+
+    *mon = gBattleMons[battlerId];
+    if (partyId >= PARTY_SIZE)
+    {
+        mon->ability = ABILITY_NONE;
+        mon->item = ITEM_NONE;
+        return;
+    }
+
+    {
+        struct PlayerPartyKnowledge *knowledge = &gBattleResources->battleHistory->playerParty[partyId];
+
+        if (knowledge->abilityKnown)
+            mon->ability = knowledge->ability;
+        else
+            mon->ability = ABILITY_NONE;
+        if (knowledge->itemKnown)
+            mon->item = knowledge->item;
+        else
+            mon->item = ITEM_NONE;
+    }
+}
+
+static void RememberPlayerBattleKnowledge(u8 battlerId)
+{
+    u8 partyId = gBattleStruct->battlerPartyIndexes[battlerId];
+    struct PlayerPartyKnowledge *knowledge;
+    u16 lastMove = gLastMoves[battlerId];
+    s32 i;
+
+    if (partyId >= PARTY_SIZE)
+        return;
+
+    knowledge = &gBattleResources->battleHistory->playerParty[partyId];
+    if (lastMove != MOVE_NONE && lastMove != MOVE_UNAVAILABLE && lastMove < MOVES_COUNT)
+    {
+        for (i = 0; i < MAX_MON_MOVES; i++)
         {
-            move = GetMonData(&gEnemyParty[i], MON_DATA_MOVE1 + j);
-            gBattleMoveDamage = 0;
-            if (move != MOVE_NONE && gBattleMoves[move].power != 1)
+            if (knowledge->moves[i] == lastMove)
+                break;
+            if (knowledge->moves[i] == MOVE_NONE)
             {
-                AI_CalcDmg(gActiveBattler, opposingBattler);
-                TypeCalc(move, gActiveBattler, opposingBattler);
-            }
-            if (bestDmg < gBattleMoveDamage)
-            {
-                bestDmg = gBattleMoveDamage;
-                bestMonId = i;
+                knowledge->moves[i] = lastMove;
+                break;
             }
         }
     }
+
+    if (knowledge->itemKnown && knowledge->item != gBattleMons[battlerId].item)
+        knowledge->item = gBattleMons[battlerId].item;
+}
+
+u8 GetMostSuitableMonToSwitchInto(void)
+{
+    struct BattlePokemon candidate;
+    struct BattlePokemon opponentMon;
+    u8 opposingBattlers[MAX_BATTLERS_COUNT];
+    u8 numOpponents = 0;
+    u8 bestMonId = PARTY_SIZE;
+    u32 bestDamage = 0;
+    u32 bestThreat = 0xFFFFFFFF;
+    u16 bestHp = 0;
+    u8 i, j;
+    s32 bestScore = -0x7FFFFFFF;
+
+    if (*(gBattleStruct->monToSwitchIntoId + gActiveBattler) != PARTY_SIZE)
+        return *(gBattleStruct->monToSwitchIntoId + gActiveBattler);
+
+    for (i = 0; i < MAX_BATTLERS_COUNT; ++i)
+    {
+        if (GetBattlerSide(i) != GetBattlerSide(gActiveBattler)
+         && !(gAbsentBattlerFlags & gBitTable[i]))
+        {
+            RememberPlayerBattleKnowledge(i);
+            opposingBattlers[numOpponents++] = i;
+        }
+    }
+
+    for (i = 0; i < PARTY_SIZE; ++i)
+    {
+        u16 species = GetMonData(&gEnemyParty[i], MON_DATA_SPECIES_OR_EGG);
+        u32 totalDamage = 0;
+        u32 incomingDamage = 0;
+        u16 hp;
+        s32 score;
+        u32 totalThreat = 0;
+
+        if (species == SPECIES_NONE || species == SPECIES_EGG
+         || GetMonData(&gEnemyParty[i], MON_DATA_HP) == 0
+         || i == gBattlerPartyIndexes[gActiveBattler])
+            continue;
+
+        if ((gBattleTypeFlags & BATTLE_TYPE_DOUBLE)
+         && i == gBattlerPartyIndexes[GetBattlerAtPosition(GetBattlerPosition(gActiveBattler) ^ BIT_FLANK)])
+            continue;
+
+        if (i == *(gBattleStruct->monToSwitchIntoId + GetBattlerAtPosition(B_POSITION_OPPONENT_LEFT))
+         || i == *(gBattleStruct->monToSwitchIntoId + GetBattlerAtPosition(B_POSITION_OPPONENT_RIGHT)))
+            continue;
+
+        LoadSwitchCandidate(&candidate, i);
+        hp = candidate.hp;
+
+        for (j = 0; j < numOpponents; ++j)
+        {
+            u8 opponent = opposingBattlers[j];
+            u32 bestMoveDamage = 0;
+            u32 bestIncomingDamage = 0;
+            u8 moveSlot;
+            u8 partyId = gBattleStruct->battlerPartyIndexes[opponent];
+            struct PlayerPartyKnowledge *knowledge;
+
+            if (partyId >= PARTY_SIZE)
+                continue;
+            knowledge = &gBattleResources->battleHistory->playerParty[partyId];
+            LoadKnownPlayerPokemon(&opponentMon, opponent);
+            for (moveSlot = 0; moveSlot < MAX_MON_MOVES; ++moveSlot)
+            {
+                u32 damage;
+                u16 move = candidate.moves[moveSlot];
+
+                if (move == MOVE_NONE || candidate.pp[moveSlot] == 0)
+                    continue;
+
+                damage = GetSwitchMoveDamage(&candidate, &opponentMon, move, 0, gActiveBattler, opponent);
+                if (damage > bestMoveDamage)
+                    bestMoveDamage = damage;
+            }
+            for (moveSlot = 0; moveSlot < MAX_MON_MOVES; ++moveSlot)
+            {
+                u32 damage;
+                u16 move = knowledge->moves[moveSlot];
+
+                if (move == MOVE_NONE || move >= MOVES_COUNT)
+                    continue;
+
+                damage = GetSwitchMoveDamage(&opponentMon, &candidate, move, 0, opponent, gActiveBattler);
+                if (damage > bestIncomingDamage)
+                    bestIncomingDamage = damage;
+            }
+            {
+                u32 inferredDamage = GetInferredStabDamage(&opponentMon, &candidate, opponent, gActiveBattler);
+                if (inferredDamage > bestIncomingDamage)
+                    bestIncomingDamage = inferredDamage;
+            }
+            if (bestMoveDamage > opponentMon.hp)
+                bestMoveDamage = opponentMon.hp;
+            totalDamage += bestMoveDamage;
+            totalThreat += bestIncomingDamage;
+        }
+        incomingDamage = totalThreat;
+
+        score = (s32)totalDamage - (s32)incomingDamage;
+        if (bestMonId == PARTY_SIZE || score > bestScore
+         || (score == bestScore && (totalDamage > bestDamage
+          || (totalDamage == bestDamage && (incomingDamage < bestThreat
+           || (incomingDamage == bestThreat && hp > bestHp))))))
+        {
+            bestMonId = i;
+            bestScore = score;
+            bestDamage = totalDamage;
+            bestThreat = incomingDamage;
+            bestHp = hp;
+        }
+    }
+
     return bestMonId;
 }
 
