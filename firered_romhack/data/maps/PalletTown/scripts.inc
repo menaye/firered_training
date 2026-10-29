@@ -169,7 +169,7 @@ PalletTown_Movement_PlayerWalkToLabFromHouse::
 PalletTown_EventScript_Shay::
 	specialvar VAR_RESULT, BeginTrainerDrill
 	goto_if_eq VAR_RESULT, FALSE, PalletTown_EventScript_ShayDrillUnavailable
-	trainerbattle_single TRAINER_PALLET_TOWN_Shay, PalletTown_Text_ShayIntro, PalletTown_Text_ShayDefeat
+	trainerbattle_single TRAINER_PALLET_TOWN_SHAY, PalletTown_Text_ShayIntro, PalletTown_Text_ShayDefeat
 	msgbox PalletTown_Text_ShayAfter, MSGBOX_AUTOCLOSE
 	end
 

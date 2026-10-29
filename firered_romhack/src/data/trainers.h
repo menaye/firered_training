@@ -7423,9 +7423,9 @@ const struct Trainer gTrainers[] = {
         .party = NO_ITEM_DEFAULT_MOVES(sParty_CueBallPaxton),
     },
     [TRAINER_PALLET_TOWN_SHAY] = {
-        .trainerClass = TRAINER_CLASS_PKMN_BREEDER,
+        .trainerClass = FACILITY_CLASS_PKMN_TRAINER_MAY,
         .encounterMusic_gender = TRAINER_ENCOUNTER_MUSIC_FEMALE,
-        .trainerPic = TRAINER_PIC_POKEMON_BREEDER,
+        .trainerPic = TRAINER_PIC_RS_MAY_1,
         .trainerName = _("SHAY"),
         .items = {},
         .doubleBattle = FALSE,
