@@ -23,6 +23,7 @@ enum {
 
 void AI_TrySwitchOrUseItem(void);
 u8 GetMostSuitableMonToSwitchInto(void);
+void AI_ScoreMovesByOutcome(void);
 u8 AI_GetSwitchAwareMoveChoice(void);
 
 #endif // GUARD_BATTLE_AI_SWITCH_ITEMS_H

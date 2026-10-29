@@ -1913,6 +1913,94 @@ static bool8 IsNeutralDamageMatchup(u32 outgoingDamage, struct BattlePokemon *ta
     return difference <= 15;
 }
 
+void AI_ScoreMovesByOutcome(void)
+{
+    struct BattlePokemon *attacker;
+    struct BattlePokemon *target;
+    u32 incomingThreat;
+    u32 incomingPercent;
+    u8 targetBattler = gBattlerTarget;
+    u8 i;
+
+    if (!(gBattleTypeFlags & BATTLE_TYPE_TRAINER)
+     || (gBattleTypeFlags & BATTLE_TYPE_DOUBLE)
+     || GetBattlerSide(targetBattler) != B_SIDE_PLAYER
+     || (gAbsentBattlerFlags & gBitTable[targetBattler]))
+        return;
+
+    attacker = &gBattleMons[gActiveBattler];
+    target = &gBattleMons[targetBattler];
+    if (attacker->maxHP == 0 || target->maxHP == 0)
+        return;
+
+    incomingThreat = GetKnownPlayerThreat(targetBattler, attacker);
+    {
+        u32 priorityThreat = GetKnownPlayerPriorityThreat(targetBattler, attacker, NULL);
+        if (priorityThreat > incomingThreat)
+            incomingThreat = priorityThreat;
+    }
+    incomingPercent = incomingThreat * 100 / attacker->maxHP;
+    if (incomingPercent > 100)
+        incomingPercent = 100;
+
+    for (i = 0; i < MAX_MON_MOVES; ++i)
+    {
+        u16 move = attacker->moves[i];
+        s32 score = gBattleResources->ai->score[i];
+        u32 damage = 0;
+        u32 damagePercent = 0;
+
+        if (!IsUsableSwitchAwareMove(i))
+            continue;
+
+        if (gBattleMoves[move].power != 0)
+        {
+            damage = GetSwitchMoveDamage(attacker, target, move, 0,
+                                         gActiveBattler, targetBattler);
+            damagePercent = damage * 100 / target->maxHP;
+            if (damagePercent > 100)
+                damagePercent = 100;
+        }
+
+        score = 55 + (score - 100) / 2 + damagePercent / 3;
+        if (damage >= target->hp && damage != 0)
+        {
+            score += 25;
+        }
+        else
+        {
+            score -= incomingPercent / 4;
+            if (damage == 0)
+                score -= incomingPercent / 5;
+        }
+
+        if (gBattleMoves[move].effect == EFFECT_PROTECT)
+        {
+            u32 protectChance = 100;
+            u32 residualDamage = GetExpectedEndOfTurnDamage(target, targetBattler, TRUE);
+            u32 residualPercent = residualDamage * 100 / target->maxHP;
+            u8 protectUses = gDisableStructs[gActiveBattler].protectUses;
+
+            if (protectUses >= 3)
+                protectChance = 12;
+            else
+                protectChance >>= protectUses;
+
+            score += incomingPercent * protectChance / 200;
+            score += residualPercent / 2;
+            score -= 12;
+            if (incomingThreat == 0 && residualDamage == 0)
+                score -= 20;
+        }
+
+        if (score < 1)
+            score = 1;
+        else if (score > 127)
+            score = 127;
+        gBattleResources->ai->score[i] = score;
+    }
+}
+
 static void LoadRevealedPlayerReserve(struct BattlePokemon *mon, u8 partyId)
 {
     struct PlayerPartyKnowledge *knowledge = &gBattleResources->battleHistory->playerParty[partyId];
@@ -2203,7 +2291,7 @@ static bool8 ShouldSwitchForBadMatchup(void)
     s32 bestScore = -0x7FFFFFFF;
     u8 bestMonId = PARTY_SIZE;
 
-    if (HasUsefulStatusOrSetupMove())
+    if (activeMon.hp == 0 || HasUsefulStatusOrSetupMove())
         return FALSE;
 
     for (i = 0; i < MAX_BATTLERS_COUNT; ++i)
@@ -2249,7 +2337,8 @@ static bool8 ShouldSwitchForBadMatchup(void)
             }
             if (bestDamage > opponentMon.hp)
                 bestDamage = opponentMon.hp;
-            activeOutgoingDamage += bestDamage;
+            if (opponentMon.maxHP != 0)
+                activeOutgoingDamage += bestDamage * 100 / opponentMon.maxHP;
         }
     }
 
@@ -2260,7 +2349,7 @@ static bool8 ShouldSwitchForBadMatchup(void)
     if (activeThreat > activeMon.hp)
         activeThreat = activeMon.hp;
 
-    activeScore = (s32)activeOutgoingDamage - (s32)activeThreat;
+    activeScore = (s32)activeOutgoingDamage - (s32)(activeThreat * 100 / activeMon.hp);
     for (i = 0; i < PARTY_SIZE; ++i)
     {
         u16 species = GetMonData(&gEnemyParty[i], MON_DATA_SPECIES_OR_EGG);
@@ -2308,7 +2397,8 @@ static bool8 ShouldSwitchForBadMatchup(void)
             }
             if (bestDamage > opponentMon.hp)
                 bestDamage = opponentMon.hp;
-            outgoingDamage += bestDamage;
+            if (opponentMon.maxHP != 0)
+                outgoingDamage += bestDamage * 100 / opponentMon.maxHP;
 
             incomingDamage += GetKnownPlayerThreatWithMon(opponent, &candidate, &opponentMon);
             if (incomingDamage > candidate.hp)
@@ -2316,7 +2406,7 @@ static bool8 ShouldSwitchForBadMatchup(void)
         }
 
         incomingDamage += GetExpectedEndOfTurnDamage(&candidate, gActiveBattler, FALSE);
-        score = (s32)outgoingDamage - (s32)incomingDamage;
+        score = (s32)outgoingDamage - (s32)(incomingDamage * 100 / candidate.hp);
         if (score > bestScore)
         {
             bestMonId = i;

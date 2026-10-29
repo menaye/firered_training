@@ -405,9 +405,18 @@ u8 BattleAI_ChooseMoveOrAction(void)
     if (AI_THINKING_STRUCT->aiAction & AI_ACTION_WATCH)
         return AI_CHOICE_WATCH;
 
-    strategicMove = AI_GetSwitchAwareMoveChoice();
-    if (strategicMove < MAX_MON_MOVES)
-        return strategicMove;
+    if (gBattleTypeFlags & BATTLE_TYPE_TRAINER)
+    {
+        AI_ScoreMovesByOutcome();
+        strategicMove = AI_GetSwitchAwareMoveChoice();
+        if (strategicMove < MAX_MON_MOVES)
+        {
+            s16 score = AI_THINKING_STRUCT->score[strategicMove] + 8;
+            if (score > 127)
+                score = 127;
+            AI_THINKING_STRUCT->score[strategicMove] = score;
+        }
+    }
 
     numOfBestMoves = 1;
     currentMoveArray[0] = AI_THINKING_STRUCT->score[0];
