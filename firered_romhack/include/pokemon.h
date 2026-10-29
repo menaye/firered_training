@@ -388,6 +388,8 @@ u8 CheckPartyPokerus(struct Pokemon *party, u8 party_bm);
 u8 CheckPartyHasHadPokerus(struct Pokemon *party, u8 selection);
 void PartySpreadPokerus(struct Pokemon *party);
 bool8 TryIncrementMonLevel(struct Pokemon *mon);
+u8 GetCurrentLevelCap(void);
+u32 GetMonExpWithLevelCap(u16 species, u32 exp);
 u32 CanMonLearnTMHM(struct Pokemon *mon, u8 tm);
 u8 GetMoveRelearnerMoves(struct Pokemon *mon, u16 *moves);
 u8 GetLevelUpMovesBySpecies(u16 species, u16 *moves);

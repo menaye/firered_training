@@ -10861,10 +10861,11 @@ static const struct TrainerMonNoItemDefaultMoves sParty_CueBallPaxton[] = {
     },
 };
 
-static const struct TrainerMonNoItemCustomMoves sParty_PalletTownShay[] = {
+static const struct TrainerMonItemCustomMoves sParty_PalletTownShay[] = {
     {
-        .iv = 15,
+        .iv = 31,
         .lvl = 50,
+        .heldItem = ITEM_SPELL_TAG,
         .species = SPECIES_GENGAR,
         .moves = {MOVE_SHADOW_BALL, MOVE_BRICK_BREAK, MOVE_TAUNT, MOVE_NIGHT_SHADE},
     },

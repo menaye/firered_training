@@ -36,6 +36,7 @@
 #include "constants/hold_effects.h"
 #include "constants/battle_move_effects.h"
 #include "constants/union_room.h"
+#include "constants/flags.h"
 
 #define SPECIES_TO_HOENN(name)      [SPECIES_##name - 1] = HOENN_DEX_##name
 #define SPECIES_TO_NATIONAL(name)   [SPECIES_##name - 1] = NATIONAL_DEX_##name
@@ -2205,6 +2206,44 @@ u8 GetLevelFromBoxMonExp(struct BoxPokemon *boxMon)
     return level - 1;
 }
 
+u8 GetCurrentLevelCap(void)
+{
+    if (FlagGet(FLAG_SYS_GAME_CLEAR))
+        return MAX_LEVEL;
+    if (FlagGet(FLAG_DEFEATED_KOGA) && FlagGet(FLAG_DEFEATED_SABRINA))
+    {
+        if (FlagGet(FLAG_BADGE08_GET))
+            return 63;
+        if (FlagGet(FLAG_BADGE07_GET))
+            return 50;
+        return 47;
+    }
+    if (FlagGet(FLAG_DEFEATED_KOGA) || FlagGet(FLAG_DEFEATED_SABRINA) || FlagGet(FLAG_BADGE04_GET))
+        return 43;
+    if (FlagGet(FLAG_BADGE03_GET))
+        return 29;
+    if (FlagGet(FLAG_BADGE02_GET))
+        return 24;
+    if (FlagGet(FLAG_BADGE01_GET))
+        return 21;
+    return 14;
+}
+
+u32 GetMonExpWithLevelCap(u16 species, u32 exp)
+{
+    u8 levelCap = GetCurrentLevelCap();
+    u32 maxExp;
+
+    if (levelCap == MAX_LEVEL)
+        return exp;
+
+    maxExp = gExperienceTables[gSpeciesInfo[species].growthRate][levelCap + 1] - 1;
+    if (exp > maxExp)
+        exp = maxExp;
+
+    return exp;
+}
+
 u16 GiveMoveToMon(struct Pokemon *mon, u16 move)
 {
     return GiveMoveToBoxMon(&mon->box, move);
@@ -4162,9 +4201,15 @@ bool8 PokemonUseItemEffects(struct Pokemon *mon, u16 item, u8 partyIndex, u8 mov
 
             // Rare Candy
             if ((itemEffect[cmdIndex] & ITEM3_LEVEL_UP)
-             && GetMonData(mon, MON_DATA_LEVEL, NULL) != MAX_LEVEL)
+             && GetMonData(mon, MON_DATA_LEVEL, NULL) < GetCurrentLevelCap())
             {
-                data = gExperienceTables[gSpeciesInfo[GetMonData(mon, MON_DATA_SPECIES, NULL)].growthRate][GetMonData(mon, MON_DATA_LEVEL, NULL) + 1];
+                u16 species = GetMonData(mon, MON_DATA_SPECIES, NULL);
+                u8 level = GetMonData(mon, MON_DATA_LEVEL, NULL);
+                u32 nextLevelExp = gExperienceTables[gSpeciesInfo[species].growthRate][level + 1];
+
+                data = GetMonData(mon, MON_DATA_EXP, NULL);
+                if (data < nextLevelExp)
+                    data = nextLevelExp;
                 SetMonData(mon, MON_DATA_EXP, &data);
                 CalculateMonStats(mon);
                 retVal = FALSE;
@@ -4652,7 +4697,7 @@ bool8 PokemonItemUseNoEffect(struct Pokemon *mon, u16 item, u8 partyIndex, u8 mo
 
             // Rare Candy
             if ((itemEffect[cmdIndex] & ITEM3_LEVEL_UP)
-             && GetMonData(mon, MON_DATA_LEVEL, NULL) != MAX_LEVEL)
+             && GetMonData(mon, MON_DATA_LEVEL, NULL) < GetCurrentLevelCap())
                 retVal = FALSE;
 
             // Cure status
@@ -5076,6 +5121,11 @@ u16 GetEvolutionTargetSpecies(struct Pokemon *mon, u8 type, u16 evolutionItem)
             case EVO_LEVEL:
                 if (gEvolutionTable[species][i].param <= level)
                     targetSpecies = gEvolutionTable[species][i].targetSpecies;
+                break;
+            case EVO_LEVEL_ITEM:
+                if (33 <= level)
+                    if (gEvolutionTable[species][i].param == heldItem)
+                        targetSpecies = gEvolutionTable[species][i].targetSpecies;
                 break;
             case EVO_LEVEL_ATK_GT_DEF:
                 if (gEvolutionTable[species][i].param <= level)
@@ -5698,10 +5748,14 @@ bool8 TryIncrementMonLevel(struct Pokemon *mon)
 {
     u16 species = GetMonData(mon, MON_DATA_SPECIES, NULL);
     u8 level = GetMonData(mon, MON_DATA_LEVEL, NULL);
+    u8 levelCap = GetCurrentLevelCap();
     u8 newLevel = level + 1;
     u32 exp = GetMonData(mon, MON_DATA_EXP, NULL);
 
-    if (level < MAX_LEVEL)
+    if (level > levelCap)
+        return FALSE;
+
+    if (level < levelCap)
     {
         if (exp > gExperienceTables[gSpeciesInfo[species].growthRate][newLevel])
         {
@@ -5712,9 +5766,15 @@ bool8 TryIncrementMonLevel(struct Pokemon *mon)
         else
             return FALSE;
     }
-    else
+    else if (level >= MAX_LEVEL)
     {
         SetMonExpWithMaxLevelCheck(mon, species, level, exp);
+        return FALSE;
+    }
+    else
+    {
+        exp = GetMonExpWithLevelCap(species, exp);
+        SetMonData(mon, MON_DATA_EXP, &exp);
         return FALSE;
     }
 }
