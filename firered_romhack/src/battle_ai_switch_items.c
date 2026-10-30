@@ -2065,6 +2065,7 @@ u8 AI_GetSwitchAwareMoveChoice(void)
     activeOpponent = &gBattleMons[targetBattler];
     activeMon = &gBattleMons[gActiveBattler];
 
+    // calculates if active moves do damage above 0 to the opponent and finds the best one
     for (i = 0; i < MAX_MON_MOVES; ++i)
     {
         u16 move = gBattleMons[gActiveBattler].moves[i];
@@ -2082,12 +2083,14 @@ u8 AI_GetSwitchAwareMoveChoice(void)
         }
     }
 
+    // if no active moves are usable, check for a status move to use instead
     if (bestActiveMove == MAX_MON_MOVES)
     {
         bestStatusMove = GetBestStatusMove(activeOpponent, targetBattler, FALSE);
         return bestStatusMove;
     }
 
+    // tracks which battlers on the player's side are present and not fainted, to account for Trace
     for (battlerId = 0; battlerId < MAX_BATTLERS_COUNT; ++battlerId)
     {
         if (GetBattlerSide(battlerId) == GetBattlerSide(gActiveBattler)
@@ -2095,6 +2098,7 @@ u8 AI_GetSwitchAwareMoveChoice(void)
             traceTargets[numTraceTargets++] = battlerId;
     }
 
+    // checks the player's party for healthy reserve Pokemon
     for (i = 0; i < PARTY_SIZE; ++i)
     {
         u16 species = GetMonData(&gPlayerParty[i], MON_DATA_SPECIES_OR_EGG);
@@ -2118,6 +2122,7 @@ u8 AI_GetSwitchAwareMoveChoice(void)
             continue;
         }
 
+        // tests player's revealed reserves to see if they are a better switch-in than the active Pokemon
         LoadRevealedPlayerReserve(&predictedSwitch, i);
         {
             struct BattlePokemon attackerMon = gBattleMons[gActiveBattler];
@@ -2155,6 +2160,7 @@ u8 AI_GetSwitchAwareMoveChoice(void)
         }
     }
 
+    // if the player has no healthy reserves, check if a status move is better than the best active move
     if (healthyReserves == 0)
     {
         activeThreat = GetKnownPlayerThreat(targetBattler, activeMon);
@@ -2173,6 +2179,7 @@ u8 AI_GetSwitchAwareMoveChoice(void)
     trainerSpeed = GetSwitchSpeedRange(activeMon, gActiveBattler, FALSE);
     switchLikelihood = 0;
 
+    // calculates the likelihood of the trainer switching based on the active Pokemon's HP percentage
     if (activeOpponent->maxHP != 0)
     {
         u32 hpPercent = activeOpponent->hp * 100 / activeOpponent->maxHP;
@@ -2200,6 +2207,7 @@ u8 AI_GetSwitchAwareMoveChoice(void)
             switchLikelihood = 0;
     }
 
+    // if the trainer is unlikely to switch, check if a status move is better than the best active move
     if (switchLikelihood == 0 || Random() % 100 >= switchLikelihood)
     {
         if (IsNeutralDamageMatchup(bestActiveDamage, activeOpponent, activeThreat, activeMon)
@@ -2212,6 +2220,7 @@ u8 AI_GetSwitchAwareMoveChoice(void)
         return bestActiveMove;
     }
 
+    // considers coverage moves and status moves if the trainer has unrevealed reserves
     hasPredictedSwitchTarget = predictedSwitchPartyId != PARTY_SIZE;
     if (unrevealedReserves != 0)
     {
@@ -2416,6 +2425,7 @@ static bool8 ShouldSwitchForBadMatchup(void)
         gBattleMons[gActiveBattler].ability = outgoingAbility;
     }
 
+    // if the best switch candidate is better than the active Pokemon, set it to switch in
     if (bestMonId != PARTY_SIZE && bestScore > activeScore)
     {
         *(gBattleStruct->AI_monToSwitchIntoId + (GetBattlerPosition(gActiveBattler) >> 1)) = bestMonId;

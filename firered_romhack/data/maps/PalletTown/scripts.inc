@@ -166,15 +166,15 @@ PalletTown_Movement_PlayerWalkToLabFromHouse::
 	walk_right
 	step_end
 
-PalletTown_EventScript_Shay::
+PalletTown_EventScript_Roxanne::
 	specialvar VAR_RESULT, BeginTrainerDrill
-	goto_if_eq VAR_RESULT, FALSE, PalletTown_EventScript_ShayDrillUnavailable
-	trainerbattle_single TRAINER_PALLET_TOWN_SHAY, PalletTown_Text_ShayIntro, PalletTown_Text_ShayDefeat
-	msgbox PalletTown_Text_ShayAfter, MSGBOX_AUTOCLOSE
+	goto_if_eq VAR_RESULT, FALSE, PalletTown_EventScript_RoxanneDrillUnavailable
+	trainerbattle_single TRAINER_PALLET_TOWN_ROXANNE, PalletTown_Text_RoxanneIntro, PalletTown_Text_RoxanneDefeat
+	msgbox PalletTown_Text_RoxanneAfter, MSGBOX_AUTOCLOSE
 	end
 
-PalletTown_EventScript_ShayDrillUnavailable::
-	msgbox PalletTown_Text_ShayDrillUnavailable, MSGBOX_NPC
+PalletTown_EventScript_RoxanneDrillUnavailable::
+	msgbox PalletTown_Text_RoxanneDrillUnavailable, MSGBOX_NPC
 	end
 
 PalletTown_EventScript_OakTriggerLeft::

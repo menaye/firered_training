@@ -68,8 +68,8 @@ const struct TrainerDrills gTrainerDrills[] = {
             },
         },
         .trainer = {
-            .name = _("SHAY"),
-            .facilityClass = FACILITY_CLASS_MAY,
+            .name = _("ROXANNE"),
+            .facilityClass = FACILITY_CLASS_LEADER_ROXANNE,
             .textColor = 1,
             .speechBefore = {EC_WORD_I, EC_WORD_WILL, EC_WORD_NOT, EC_WORD_LOSE, EC_WORD_TO, EC_WORD_YOU},
             .speechWin = {EC_WORD_YOU, EC_WORD_ARE, EC_WORD_TOO, EC_WORD_WEAK, EC_WORD_TO, EC_WORD_WIN},
@@ -118,7 +118,7 @@ u16 BeginTrainerDrill(void)
     s32 i;
 
     if (sDrillPartyBackup.active
-     || HasTrainerBeenFought(TRAINER_PALLET_TOWN_SHAY)
+     || HasTrainerBeenFought(TRAINER_PALLET_TOWN_ROXANNE)
      || drill->playerPartySize == 0
      || drill->playerPartySize > PARTY_SIZE
      || drill->playerLeadIndex >= drill->playerPartySize)

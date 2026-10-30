@@ -7422,14 +7422,14 @@ const struct Trainer gTrainers[] = {
         .aiFlags = AI_SCRIPT_CHECK_BAD_MOVE,
         .party = NO_ITEM_DEFAULT_MOVES(sParty_CueBallPaxton),
     },
-    [TRAINER_PALLET_TOWN_SHAY] = {
-        .trainerClass = FACILITY_CLASS_PKMN_TRAINER_MAY,
+    [TRAINER_PALLET_TOWN_ROXANNE] = {
+        .trainerClass = TRAINER_CLASS_RS_LEADER,
         .encounterMusic_gender = TRAINER_ENCOUNTER_MUSIC_FEMALE,
-        .trainerPic = TRAINER_PIC_RS_MAY_1,
-        .trainerName = _("SHAY"),
+        .trainerPic = TRAINER_PIC_LEADER_ROXANNE,
+        .trainerName = _("ROXANNE"),
         .items = {},
         .doubleBattle = FALSE,
         .aiFlags = AI_SCRIPT_CHECK_BAD_MOVE | AI_SCRIPT_TRY_TO_FAINT | AI_SCRIPT_CHECK_VIABILITY,
-        .party = ITEM_CUSTOM_MOVES(sParty_PalletTownShay),
+        .party = ITEM_CUSTOM_MOVES(sParty_PalletTownRoxanne),
     },
 };

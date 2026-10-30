@@ -15,22 +15,22 @@ PalletTown_Text_RaisingMonsToo::
     .string "When they get strong, they can\n"
     .string "protect me.$"
 
-PalletTown_Text_ShayIntro::
+PalletTown_Text_RoxanneIntro::
     .string "Normal moves can't hit GENGAR.\n"
     .string "Switch to a POKéMON with a super-\p"
     .string "effective move and hit within\n"
     .string "three turns!$"
 
-PalletTown_Text_ShayDefeat::
+PalletTown_Text_RoxanneDefeat::
     .string "You read the matchup perfectly!\n"
     .string "That's a smart battle drill!$"
 
-PalletTown_Text_ShayAfter::
+PalletTown_Text_RoxanneAfter::
     .string "Switching can turn a bad matchup\n"
     .string "around. Keep watching for type\n"
     .string "advantages!$"
 
-PalletTown_Text_ShayDrillUnavailable::
+PalletTown_Text_RoxanneDrillUnavailable::
     .string "Let's practice another time!$"
 
 PalletTown_Text_CanStoreItemsAndMonsInPC::

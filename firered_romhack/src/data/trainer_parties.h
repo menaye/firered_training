@@ -10861,7 +10861,7 @@ static const struct TrainerMonNoItemDefaultMoves sParty_CueBallPaxton[] = {
     },
 };
 
-static const struct TrainerMonItemCustomMoves sParty_PalletTownShay[] = {
+static const struct TrainerMonItemCustomMoves sParty_PalletTownRoxanne[] = {
     {
         .iv = 31,
         .lvl = 50,
