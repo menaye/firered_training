@@ -22,30 +22,50 @@ Route15_WestEntrance_2F_EventScript_RightBinoculars::
 Route15_WestEntrance_2F_EventScript_Aide::
 	lock
 	faceplayer
-	call Route15_WestEntrance_2F_EventScript_GetAideRequestInfo
-	goto_if_set FLAG_GOT_EXP_SHARE_FROM_OAKS_AIDE, Route15_WestEntrance_2F_EventScript_AlreadyGotExpShare
+	goto_if_set FLAG_GOT_FOSSIL_FROM_OAKS_AIDE, Route15_WestEntrance_2F_EventScript_AlreadyGotFossil
+	goto_if_set FLAG_GOT_HELIX_FOSSIL, Route15_WestEntrance_2F_EventScript_PlayerHasHelixFossil
+	goto_if_set FLAG_GOT_DOME_FOSSIL, Route15_WestEntrance_2F_EventScript_PlayerHasDomeFossil
+	goto Route15_WestEntrance_2F_EventScript_NoFossilToGive
+
+Route15_WestEntrance_2F_EventScript_PlayerHasHelixFossil::
+	bufferitemname STR_VAR_2, ITEM_DOME_FOSSIL
+	goto Route15_WestEntrance_2F_EventScript_AskAboutFossil
+
+Route15_WestEntrance_2F_EventScript_PlayerHasDomeFossil::
+	bufferitemname STR_VAR_2, ITEM_HELIX_FOSSIL
+
+Route15_WestEntrance_2F_EventScript_AskAboutFossil::
+	buffernumberstring STR_VAR_1, REQUIRED_CAUGHT_MONS
 	msgbox Route15_WestEntrance_2F_Text_GiveItemIfCaughtEnough, MSGBOX_YESNO
 	goto_if_eq VAR_RESULT, NO, Aide_EventScript_DeclineCheckMons
 	setvar VAR_0x8004, 0
 	specialvar VAR_RESULT, GetPokedexCount
 	buffernumberstring STR_VAR_3, VAR_0x8006
-	call Route15_WestEntrance_2F_EventScript_GetAideRequestInfo
 	goto_if_lt VAR_0x8006, REQUIRED_CAUGHT_MONS, Aide_EventScript_HaventCaughtEnough
 	msgbox Route15_WestEntrance_2F_Text_GreatHereYouGo
-	checkitemspace ITEM_EXP_SHARE
+	goto_if_set FLAG_GOT_HELIX_FOSSIL, Route15_WestEntrance_2F_EventScript_GiveDomeFossil
+	checkitemspace ITEM_HELIX_FOSSIL
 	goto_if_eq VAR_RESULT, FALSE, Aide_EventScript_NoRoomForItem
-	giveitem_msg Route15_WestEntrance_2F_Text_ReceivedItemFromAide, ITEM_EXP_SHARE
-	setflag FLAG_GOT_EXP_SHARE_FROM_OAKS_AIDE
-	msgbox Route15_WestEntrance_2F_Text_ExplainExpShare
+	giveitem_msg Route15_WestEntrance_2F_Text_ReceivedItemFromAide, ITEM_HELIX_FOSSIL, 1, MUS_OBTAIN_KEY_ITEM
+	goto Route15_WestEntrance_2F_EventScript_FossilGiven
+
+Route15_WestEntrance_2F_EventScript_GiveDomeFossil::
+	checkitemspace ITEM_DOME_FOSSIL
+	goto_if_eq VAR_RESULT, FALSE, Aide_EventScript_NoRoomForItem
+	giveitem_msg Route15_WestEntrance_2F_Text_ReceivedItemFromAide, ITEM_DOME_FOSSIL, 1, MUS_OBTAIN_KEY_ITEM
+
+Route15_WestEntrance_2F_EventScript_FossilGiven::
+	setflag FLAG_GOT_FOSSIL_FROM_OAKS_AIDE
+	msgbox Route15_WestEntrance_2F_Text_ExplainFossil
 	release
 	end
 
-Route15_WestEntrance_2F_EventScript_AlreadyGotExpShare::
-	msgbox Route15_WestEntrance_2F_Text_ExplainExpShare
+Route15_WestEntrance_2F_EventScript_AlreadyGotFossil::
+	msgbox Route15_WestEntrance_2F_Text_AlreadyGotFossil
 	release
 	end
 
-Route15_WestEntrance_2F_EventScript_GetAideRequestInfo::
-	buffernumberstring STR_VAR_1, REQUIRED_CAUGHT_MONS
-	bufferitemname STR_VAR_2, ITEM_EXP_SHARE
-	return
+Route15_WestEntrance_2F_EventScript_NoFossilToGive::
+	msgbox Route15_WestEntrance_2F_Text_NoFossilToGive
+	release
+	end

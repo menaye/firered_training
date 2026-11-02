@@ -20,12 +20,22 @@ Route15_WestEntrance_2F_Text_ReceivedItemFromAide::
     .string "{PLAYER} received the {STR_VAR_2}\n"
     .string "from the AIDE.$"
 
-Route15_WestEntrance_2F_Text_ExplainExpShare::
-    .string "EXP. SHARE is an item to be held\n"
-    .string "by a POKéMON.\p"
-    .string "The POKéMON will receive a share\n"
-    .string "of the EXP. Points without having\l"
-    .string "to battle.$"
+Route15_WestEntrance_2F_Text_ExplainFossil::
+    .string "This fossil contains a POKéMON\n"
+    .string "that lived in ancient times.\p"
+    .string "It can be restored at the\n"
+    .string "POKéMON LAB on CINNABAR ISLAND.$"
+
+Route15_WestEntrance_2F_Text_AlreadyGotFossil::
+    .string "You already received your fossil.\n"
+    .string "Take it to the POKéMON LAB on\l"
+    .string "CINNABAR ISLAND to have it restored.$"
+
+Route15_WestEntrance_2F_Text_NoFossilToGive::
+    .string "I can only give you the fossil\n"
+    .string "that was left behind at MT. MOON.\p"
+    .string "Choose one there first, then come\n"
+    .string "back and see me.$"
 
 Route15_WestEntrance_2F_Text_LargeShiningBird::
     .string "Let's see what the binoculars have\n"
@@ -38,4 +48,3 @@ Route15_WestEntrance_2F_Text_SmallIslandOnHorizon::
     .string "to show…\p"
     .string "It looks like a small island on\n"
     .string "the horizon!$"
-

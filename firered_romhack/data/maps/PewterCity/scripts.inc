@@ -697,15 +697,14 @@ PewterCity_EventScript_AideGiveRunningShoes::
 	call_if_eq VAR_TEMP_1, 2, PewterCity_EventScript_AideApproachPlayer2
 	call_if_eq VAR_TEMP_1, 3, PewterCity_EventScript_AideApproachPlayer3
 	msgbox PewterCity_Text_AskedToDeliverThis
-	textcolor NPC_TEXT_COLOR_NEUTRAL
+	checkitemspace ITEM_EXP_SHARE
+	goto_if_eq VAR_RESULT, FALSE, PewterCity_EventScript_NoRoomForExpShare
 	playfanfare MUS_OBTAIN_KEY_ITEM
-	message PewterCity_Text_ReceivedRunningShoesFromAide
+	giveitem_msg PewterCity_Text_ReceivedExpShareFromAide, ITEM_EXP_SHARE
 	waitmessage
 	waitfanfare
-	msgbox PewterCity_Text_SwitchedShoesWithRunningShoes
-	special DisableMsgBoxWalkaway
 	signmsg
-	msgbox PewterCity_Text_ExplainRunningShoes
+	msgbox PewterCity_Text_ExplainExpShare
 	normalmsg
 	call EventScript_RestorePrevTextColor
 	msgbox PewterCity_Text_MustBeGoingBackToLab
@@ -716,11 +715,15 @@ PewterCity_EventScript_AideGiveRunningShoes::
 	call_if_eq VAR_TEMP_1, 3, PewterCity_EventScript_AideExit3
 	delay 30
 	textcolor NPC_TEXT_COLOR_NEUTRAL
-	msgbox PewterCity_Text_RunningShoesLetterFromMom
+	msgbox PewterCity_Text_EXPShareLetterFromMom
 	closemessage
 	removeobject LOCALID_PEWTER_AIDE
-	setflag FLAG_SYS_B_DASH
+	setflag FLAG_HIDE_PEWTER_CITY_RUNNING_SHOES_GUY
 	setvar VAR_MAP_SCENE_PEWTER_CITY, 2
+	return
+
+PewterCity_EventScript_NoRoomForExpShare::
+	msgbox PewterCity_Text_DontHaveRoomForExpShare
 	return
 
 PewterCity_EventScript_AideNoticePlayer::

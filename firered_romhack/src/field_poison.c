@@ -47,6 +47,23 @@ static bool32 MonFaintedFromPoison(u8 partyIdx)
     return FALSE;
 }
 
+static bool32 MonRecoversFromPoison(u8 partyIdx)
+{
+    struct Pokemon *pokemon = gPlayerParty + partyIdx;
+    if (IsMonValidSpecies(pokemon) && GetMonData(pokemon, MON_DATA_HP) == 1 && GetAilmentFromStatus(GetMonData(pokemon, MON_DATA_STATUS)) == AILMENT_PSN)
+        return TRUE;
+    return FALSE;
+}
+
+static void RecoverFromFieldPoison(u8 partyIdx)
+{
+    struct Pokemon *pokemon = gPlayerParty + partyIdx;
+    u32 status = STATUS1_NONE;
+    SetMonData(pokemon, MON_DATA_STATUS, &status);
+    GetMonData(pokemon, MON_DATA_NICKNAME, gStringVar1);
+    StringGet_Nickname(gStringVar1);
+}
+
 #define tState   data[0]
 #define tPartyId data[1]
 
@@ -58,7 +75,14 @@ static void Task_TryFieldPoisonWhiteOut(u8 taskId)
     case 0:
         for (; tPartyId < PARTY_SIZE; tPartyId++)
         {
-            if (MonFaintedFromPoison(tPartyId))
+            if (MonRecoversFromPoison(tPartyId))
+            {
+                RecoverFromFieldPoison(tPartyId);
+                ShowFieldMessage(gText_PkmnCuredOfPoison);
+                tState++;
+                return;
+            }
+            else if (MonFaintedFromPoison(tPartyId))
             {
                 FaintFromFieldPoison(tPartyId);
                 ShowFieldMessage(gText_PkmnFainted3);
@@ -97,13 +121,21 @@ s32 DoPoisonFieldEffect(void)
     struct Pokemon *pokemon = gPlayerParty;
     u32 numPoisoned = 0;
     u32 numFainted = 0;
+    u32 numRecovered = 0;
     for (i = 0; i < PARTY_SIZE; i++)
     {
         if (GetMonData(pokemon, MON_DATA_SANITY_HAS_SPECIES) && GetAilmentFromStatus(GetMonData(pokemon, MON_DATA_STATUS)) == AILMENT_PSN)
         {
             hp = GetMonData(pokemon, MON_DATA_HP);
-            if (hp == 0 || --hp == 0)
+            if (hp == 0)
                 numFainted++;
+            else
+            {
+                if (hp > 1)
+                    hp--;
+                if (hp == 1)
+                    numRecovered++;
+            }
             SetMonData(pokemon, MON_DATA_HP, &hp);
             numPoisoned++;
         }
@@ -113,6 +145,8 @@ s32 DoPoisonFieldEffect(void)
         FldEffPoison_Start();
     if (numFainted)
         return FLDPSN_FNT;
+    if (numRecovered)
+        return FLDPSN_RECOVERED;
     if (numPoisoned)
         return FLDPSN_PSN;
     return FLDPSN_NONE;

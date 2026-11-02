@@ -19,7 +19,7 @@ PalletTown_Text_RoxanneIntro::
     .string "Normal moves can't hit GENGAR.\n"
     .string "Switch to a POKéMON with a super-\p"
     .string "effective move and hit within\n"
-    .string "three turns!$"
+    .string "three turns!{PLAY_BGM}{MUS_ENCOUNTER_GYM_LEADER}$"
 
 PalletTown_Text_RoxanneDefeat::
     .string "You read the matchup perfectly!\n"
@@ -31,7 +31,10 @@ PalletTown_Text_RoxanneAfter::
     .string "advantages!$"
 
 PalletTown_Text_RoxanneDrillUnavailable::
-    .string "Let's practice another time!$"
+    .string "There should be other Hoenn Gym\n"
+    .string "Leaders around Kanto.\p"
+    .string "From what you showed me, I know\n"
+    .string "you can best them!$"
 
 PalletTown_Text_CanStoreItemsAndMonsInPC::
     .string "Technology is incredible!\p"

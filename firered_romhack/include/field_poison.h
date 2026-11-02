@@ -6,7 +6,8 @@
 enum {
     FLDPSN_NONE,
     FLDPSN_PSN,
-    FLDPSN_FNT
+    FLDPSN_FNT,
+    FLDPSN_RECOVERED
 };
 
 s32 DoPoisonFieldEffect(void);

@@ -10863,7 +10863,7 @@ static const struct TrainerMonNoItemDefaultMoves sParty_CueBallPaxton[] = {
 
 static const struct TrainerMonItemCustomMoves sParty_PalletTownRoxanne[] = {
     {
-        .iv = 31,
+        .iv = 255,
         .lvl = 50,
         .heldItem = ITEM_SPELL_TAG,
         .species = SPECIES_GENGAR,

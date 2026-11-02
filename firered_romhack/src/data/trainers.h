@@ -7424,7 +7424,6 @@ const struct Trainer gTrainers[] = {
     },
     [TRAINER_PALLET_TOWN_ROXANNE] = {
         .trainerClass = TRAINER_CLASS_RS_LEADER,
-        .encounterMusic_gender = TRAINER_ENCOUNTER_MUSIC_FEMALE,
         .trainerPic = TRAINER_PIC_LEADER_ROXANNE,
         .trainerName = _("ROXANNE"),
         .items = {},
