@@ -1,9 +1,11 @@
 # firered_training
 
-## Motivation
+Ever since I was little, I found the post-game battle facilities in Pokémon games to be insurmountable. Strategies that I used to cruise through the main game simply were not working, and I received very little feedback from the game as to why. My common experience exposes two main problems with the design of the older games:
 
-Ever since I was little, I found the post-game battle facilities in Pokémon games to be insurmountable. Strategies that I used to cruise through the main game simply were not working,
-and I received very little feedback from the game as to why. Through growing up and coming to understand intentional design through my academic studies, I wanted to design a Pokémon game in such a way that allows players to be ready for these battle facilities and their strategies upon completion of the game. Introducing.... FireRed Training!
+1. As a whole, the main campaign of Pokémon games are **too easy**. With very few exceptions, trainers do not have full teams or employ all the strategies that the game has to offer, making unprepared players get thrown for a loop when they encounter competent strategies and team builds. 
+2. The games also give you far **too little information**. For example, there are hidden stat modifiers that can greatly improve a Pokémon's performance in battle, such as IVs, EVs, and Natures, that are left unexplained to the player. The game's mechanical depth is never suggested through battle, told directly to the player, or rewarded more than more simplistic playstyles, so players are not incentivized to look further into mechanics.
+
+Ultimately, I think the time investment that an avergae player would have to make to overcome these problems in rebuilding their teams and learning about unexplained mechanics negatively impacts the enjoyment that players experience playing these games. With this in mind, I wanted to design a Pokémon game in such a way that gradually prepares players to be ready for these battle facilities upon completion of the game. Introducing.... FireRed Training!
 
 I consider the design of this ROMhack to be adjacent to games like *Celeste*, which introduces players to levels where they have to learn a new way to traverse the map. As the level progresses, the game tests the player's understanding bit by bit, while presenting optional challenges on that concept after the level is cleared. Similarly, there is a depth to the mechanics of Pokémon battling that can be explored through the natural progression of the game in its 8 gym leaders and league battles. By building teams strong enough to overcome the challenges and restrictions in the main game, the player should develop a strong enough grasp on battle strategies to challenge postgame facilities with no issues.
 
@@ -11,7 +13,7 @@ I consider the design of this ROMhack to be adjacent to games like *Celeste*, wh
 
 ### A Complete FR/LG Experience, All in One Game
 
-The primary focus of this ROMhack is to keep the spirit of FireRed and LeafGreen, while providing a fresh experience for those looking for greater difficulty in the main game. To this end, efforts have been made to retain the existing story and game balance in terms of levels and expected movesets, while raising the caliber of the opponents through smarter AI and team builds. Play with healing items mid-battle for a casual experience in line with the original games, or work with the challenge to test and improve your skills as a Trainer.
+The primary goal of this ROMhack is to **keep the spirit of FireRed and LeafGreen**, while providing a fresh experience for those looking for **greater difficulty** in the main game. To this end, efforts have been made to retain the existing story and game balance in terms of levels and expected movesets, while raising the caliber of the opponents through smarter AI and team builds. *Play with healing items mid-battle for a casual experience in line with the original games, or work with the challenge to test and improve your skills as a Trainer.*
 
 Build the team you want, however you want, regardless of your choices. 
 
@@ -33,6 +35,7 @@ Boss trainers have had their teams, items, and movesets revamped to better refle
 - Overworld poison damage leaves your Pokémon at 1 HP instead of making them faint.
 - TMs are now unlimited use to encourage experimentation.
 - Items found in the overworld are stronger to incentivize exploring the map.
+- Pokémon IVs, EVs, and Nature, and Ability effects can be viewed at a glance and adjusted easily to reduce tedium in training them.
 
 ### Optional Boss Encounters
 
@@ -51,4 +54,4 @@ Prerequisites: a GBA emulator of your choice.
 
 ## Credits
 
-The source code for Pokemon FireRed was decompiled by _______ and used as starter code for this project.
+The source code for Pokémon FireRed was decompiled by _______ and used as starter code for this project.

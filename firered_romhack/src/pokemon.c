@@ -5451,6 +5451,14 @@ u8 GetTrainerEncounterMusicId(u16 trainerId)
     return TRAINER_ENCOUNTER_MUSIC(trainerId);
 }
 
+s8 GetNatureStatModifier(u8 nature, u8 statIndex)
+{
+    if (nature >= NUM_NATURES || statIndex <= STAT_HP || statIndex > NUM_NATURE_STATS)
+        return 0;
+
+    return sNatureStatTable[nature][statIndex - 1];
+}
+
 static u16 ModifyStatByNature(u8 nature, u16 stat, u8 statIndex)
 {
 // Because this is a u16 it will be unable to store the
